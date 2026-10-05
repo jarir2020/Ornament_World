@@ -45,7 +45,7 @@ $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($
 }, ['middleware' => 'web']);
 
 $router->frontendGroup('server', 'layouts.app', function (Router $router) use ($frontendController, $userController): void {
-    $router->add('GET', '/admin', [$frontendController, 'admin'], ['web'])->name('admin.dashboard');
+    $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
     $router->add('POST', '/logout', [$userController, 'logout'], ['web'])->name('logout');
 }, ['middleware' => 'web']);
 
@@ -96,7 +96,7 @@ $router->add('GET', '/hostname', function () {
 });
 
 $router->add('GET', '/', function () {
-    \Nemesis\Helpers\Helpers::redirect('/docs/index.html');
+    \Nemesis\Helpers\Helpers::redirect('/storefront');
 });
 
 $router->add('GET', '/about', function () {

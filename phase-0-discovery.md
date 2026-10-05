@@ -94,3 +94,14 @@ Phase 0 can be closed after the decisions above are recorded and these confirmat
 ## Next authorized phase
 
 Once the open decisions are resolved, Phase 1 will continue inside the Nemesis project, establish environment templates and CI checks, and expand the shared responsive Svelte application shell. No production credentials should be committed during that work.
+
+## Phase 1 started locally
+
+The first Phase 1 foundation slice is now implemented inside `backend/`:
+
+- The storefront receives its initial content as server-rendered props from `FrontendController`; no catalog API is needed for this static shell.
+- The integrated Svelte app now provides the responsive Ornaments World navigation, hero, collection links, story section, bag affordance, and footer.
+- The root route enters `/storefront`, while the `/admin` route is protected by Nemesis `auth:admin` middleware.
+- Local smoke tests passed for the storefront response, root redirect, built Vite assets, health endpoint, and unauthenticated admin rejection.
+
+Phase 1 remains in progress until the setup/CI contract and the complete admin authentication flow are documented and verified.

@@ -58,6 +58,16 @@ class FrontendController extends Controller
             'canSeeAdmin' => ($auth['role'] ?? null) === 'admin',
             'authRole' => $auth['role'] ?? null,
             'authSubject' => $auth['sub'] ?? null,
+            'pageProps' => [
+                'brand' => 'Ornaments World',
+                'eyebrow' => 'Quiet luxury, made for every day',
+                'headline' => 'Details that make the moment.',
+                'intro' => 'Discover considered men’s jewellery designed to feel personal, lasting, and unmistakably yours.',
+                'categories' => ['Bracelets', 'Chains', 'Rings', 'Lockets'],
+                'cartCount' => 0,
+                'isAuthenticated' => !empty($auth),
+                'authRole' => $auth['role'] ?? null,
+            ],
         ];
     }
 }
