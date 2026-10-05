@@ -1,0 +1,49 @@
+# Ornament World
+
+## Summary
+
+Ornament World is a planned premium men's jewellery e-commerce platform for the Bangladesh market. Its product principle is: "Luxury look, simple shopping."
+
+## Source of truth
+
+- `plan-final.md` is the authoritative implementation plan.
+- `plan.md` is the original Bengali requirements brief.
+- `AGENTS.md` contains repository workflow and engineering constraints.
+
+## Planned stack
+
+- Backend: `jarir/nemesis-framework` via Composer.
+- Frontend: SvelteKit.
+- Styling: Tailwind CSS.
+- Initial currency: BDT.
+- Initial market: Bangladesh.
+
+## Planned user experience
+
+- Mobile-first premium black, gold, and white storefront.
+- Customers can browse products without an account.
+- Purchase paths are `Order Now` or `Add to Cart` followed by guest checkout.
+- Required checkout data includes name, normalized Bangladesh phone, complete address, district, and area/thana/upazila.
+- Delivery fees start as configurable rules: ৳60 inside Dhaka and ৳120 outside Dhaka.
+- Orders are phone-confirmed before shipment.
+
+## Planned operational workflow
+
+- Order states: New Order, Pending Confirmation, Confirmed, Processing, Shipped, Delivered, and Cancelled.
+- Shipment state is separate from commercial order state.
+- Only confirmed orders can be sent to Pathao.
+- Pathao requests must be idempotent and recoverable.
+- Failed Pathao requests remain in a `Pathao Pending / Manual Shipment Required` admin queue.
+- Admins manage catalog, variants, images, prices, discounts, stock, orders, notes, and review flags.
+
+## Engineering boundaries
+
+- Svelte props are for parent-to-child component data flow only.
+- Secure backend endpoints or SvelteKit server-side load/form actions handle persistence and external services.
+- The browser is not trusted for prices, totals, stock, validation, or order status.
+- Do not expose credentials, tokens, private customer data, or provider secrets to the client.
+- Do not claim a feature is complete until it has been implemented and verified.
+
+## Future direction
+
+The architecture should allow international shipping, multiple currencies, online payments, additional courier providers, OTP verification, and richer customer accounts without complicating the first Bangladesh release.
