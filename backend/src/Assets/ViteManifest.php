@@ -81,12 +81,16 @@ class ViteManifest implements ManifestInterface
      */
     public function tags(string $path): string
     {
+        $isCssEntry = strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'css';
+
         if ($this->isHot()) {
             $base = rtrim($this->devUrl, '/');
-            return implode("\n", [
-                '<script type="module" src="' . $base . '/@vite/client"></script>',
-                '<script type="module" src="' . $base . '/' . ltrim($path, '/') . '"></script>',
-            ]);
+            $tags = ['<script type="module" src="' . $base . '/@vite/client"></script>'];
+            $url = $base . '/' . ltrim($path, '/');
+            $tags[] = $isCssEntry
+                ? '<link rel="stylesheet" href="' . htmlspecialchars($url, ENT_QUOTES) . '">'
+                : '<script type="module" src="' . htmlspecialchars($url, ENT_QUOTES) . '"></script>';
+            return implode("\n", $tags);
         }
 
         $tags = [];
@@ -98,13 +102,20 @@ class ViteManifest implements ManifestInterface
 
         $entry = $this->manifest[$key];
 
+        $entryFile = (string) ($entry['file'] ?? $key);
+        $isCssEntry = $isCssEntry || strtolower(pathinfo($entryFile, PATHINFO_EXTENSION)) === 'css';
+
+        if ($isCssEntry) {
+            return '<link rel="stylesheet" href="' . $this->buildPath . '/' . htmlspecialchars($entryFile, ENT_QUOTES) . '">';
+        }
+
         // CSS chunks imported by this entry
         foreach ($entry['css'] ?? [] as $cssFile) {
             $tags[] = '<link rel="stylesheet" href="' . $this->buildPath . '/' . $cssFile . '">';
         }
 
         // The JS entry itself
-        $tags[] = '<script type="module" src="' . $this->buildPath . '/' . ($entry['file'] ?? $key) . '"></script>';
+        $tags[] = '<script type="module" src="' . $this->buildPath . '/' . htmlspecialchars($entryFile, ENT_QUOTES) . '"></script>';
 
         return implode("\n", $tags);
     }
