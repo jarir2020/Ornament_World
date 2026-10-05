@@ -25,13 +25,13 @@ International shipping, multiple currencies, online payment gateways, and additi
 
 ### 2.1 Application structure
 
-The application will use a separated backend and frontend:
+The application will use one Nemesis application with an integrated Svelte presentation layer:
 
 - **Backend:** `jarir/nemesis-framework` created through Composer.
-- **Frontend:** SvelteKit.
-- **Styling:** Tailwind CSS.
-- **Database:** A relational database supported by the selected Nemesis setup; production should use a managed MySQL/MariaDB or PostgreSQL database rather than a file-based database.
-- **API style:** Versioned JSON API, beginning with `/api/v1`.
+- **Frontend:** Svelte components inside Nemesis at `resources/js/svelte` and `resources/views/svelte`.
+- **Asset pipeline:** Vite with `@sveltejs/vite-plugin-svelte`, Tailwind CSS, and `@tailwindcss/vite`.
+- **Database:** MySQL for the current project direction and production baseline. SQLite remains useful for isolated tests only.
+- **Data delivery:** Nemesis controllers render the Svelte-compatible views and pass page data as props. JSON endpoints are added only where asynchronous browser interactions, admin actions, webhooks, or external integrations require them.
 - **Authentication:** Secure admin authentication with server-side sessions or token-based authentication according to the framework's supported pattern. Customers do not need accounts for the first release.
 - **Media:** Product images stored outside the database, with validated paths/URLs recorded in the database.
 - **Configuration:** Environment variables for database, app URL, mail/SMS, Pathao, analytics, and other secrets. Secrets must never be committed to source control or displayed in logs.
@@ -47,7 +47,7 @@ The backend will own:
 - Pathao API communication, retries, idempotency, and failure handling.
 - Analytics event payloads where server-side events are later enabled.
 
-The SvelteKit frontend will own:
+The integrated Svelte UI will own:
 
 - Responsive storefront presentation.
 - Product browsing, filtering, and product details.
@@ -357,7 +357,7 @@ The first release will include:
 - Product structured data with accurate price and availability.
 - XML sitemap.
 - Robots configuration.
-- Crawlable server-rendered or pre-rendered public content where SvelteKit deployment supports it.
+- Crawlable server-rendered Nemesis views with Svelte-enhanced interactions.
 - Custom 404 and useful error pages.
 
 ### 10.3 Performance
@@ -387,7 +387,7 @@ The first release will include:
 ### Phase 0 — Discovery and technical verification
 
 - Confirm Nemesis framework installation, supported runtime, database, authentication, file storage, and API conventions.
-- Confirm SvelteKit deployment target and server-rendering/static-rendering requirements.
+- Confirm Nemesis hosting/runtime and the integrated Vite/Svelte asset-serving requirements.
 - Verify the official Pathao API contract, merchant access, sandbox/live credentials, location data, and COD requirements.
 - Confirm initial payment policy, assumed to be cash on delivery unless the business specifies otherwise.
 - Confirm hosting, domain, email/SMS provider, image storage, backup, and analytics accounts.
@@ -398,12 +398,12 @@ The first release will include:
 ### Phase 1 — Foundation
 
 - Create the backend project with `composer create-project jarir/nemesis-framework`.
-- Create the SvelteKit frontend and Tailwind CSS design foundation.
+- Initialize the integrated Vite/Svelte/Tailwind foundation inside the Nemesis project.
 - Establish environment configuration, API versioning, database migrations, formatting, linting, and basic CI checks.
 - Implement the shared design tokens, responsive shell, navigation, cart affordance, and error/loading states.
 - Add secure admin authentication foundation.
 
-**Exit criteria:** clean development environment, connected frontend/backend, protected admin route, and reproducible setup documentation.
+**Exit criteria:** clean development environment, integrated Nemesis/Svelte application, protected admin route, and reproducible setup documentation.
 
 ### Phase 2 — Catalog and storefront
 
@@ -518,7 +518,7 @@ The first release is ready only when:
 These items are not fully specified in the source brief and must be confirmed during Phase 0:
 
 1. Whether the initial release is COD-only or also requires an online payment gateway.
-2. Exact SvelteKit hosting/runtime and backend hosting arrangement.
+2. Exact Nemesis hosting/runtime and integrated Vite asset-serving arrangement.
 3. Production database engine, image storage, backup destination, and monitoring provider.
 4. Official Pathao account/API access, sandbox availability, and shipment-status synchronization scope.
 5. Whether OTP verification is required at launch or added after observing fake-order rates.

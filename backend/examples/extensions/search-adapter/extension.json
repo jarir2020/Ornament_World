@@ -1,0 +1,6 @@
+{
+  "name": "search-adapter",
+  "version": "1.0.0",
+  "description": "Search adapter extension starter",
+  "entry": "src/SearchAdapter.php"
+}

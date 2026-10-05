@@ -1,0 +1,7 @@
+<?php
+
+// Nemesis 4.0.0 | CLI entry point | Updated: 2026-04-04
+// The canonical CLI implementation lives in bin/nemesis.
+// This file simply delegates to it so both `php nemesis` and `php bin/nemesis` work.
+
+require __DIR__ . '/bin/nemesis';

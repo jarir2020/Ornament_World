@@ -1,0 +1,3329 @@
+<?php
+
+// Nemesis 6.0.0 | CLI entry — canonical file | Updated: 2026-04-04
+// When invoked via bin/nemesis, $projectRoot is the project root (parent of bin/).
+// When invoked directly from the project root, dirname(__FILE__) IS the project root.
+$projectRoot = is_dir(dirname(__FILE__) . '/../vendor')
+    ? dirname(dirname(__FILE__))   // running from bin/
+    : dirname(__FILE__);           // running from project root
+// Autoload dependencies
+require_once $projectRoot . '/vendor/autoload.php';
+$GLOBALS['projectRoot'] = $projectRoot;
+
+define('NEMESIS_CONSOLE', true);
+
+// Load configuration and environment
+\Nemesis\Core\Config::load($projectRoot);
+$apiFormatExampleLines = [
+    'php nemesis api:format status --json --brief',
+    'php nemesis api:format status --json --pretty',
+    'php nemesis api:format status --json --source --brief',
+    'php nemesis api:format status --json --source --pretty',
+    'php nemesis api:format on',
+    'php nemesis api:format off',
+];
+
+function loadExamplesCatalog(string $projectRoot): array
+{
+    $catalogPath = $projectRoot . '/examples/catalog.php';
+    if (!file_exists($catalogPath)) {
+        return [];
+    }
+
+    $catalog = require $catalogPath;
+    return is_array($catalog) ? $catalog : [];
+}
+
+function loadFrontendCatalog(): \Nemesis\Frontend\FrontendManager
+{
+    return \Nemesis\Frontend\FrontendManager::getInstance();
+}
+
+function loadDatabaseCatalog(): array
+{
+    $database = \Nemesis\Core\Config::get('config.database', []);
+    return is_array($database) ? $database : [];
+}
+
+function databaseConnectionsPayload(): array
+{
+    $database = loadDatabaseCatalog();
+    $connections = $database['connections'] ?? [];
+    $defaultName = (string) ($database['default_connection'] ?? 'default');
+
+    $items = [];
+    foreach ((array) $connections as $name => $config) {
+        $name = (string) $name;
+        $items[] = [
+            'name' => $name,
+            'default' => $name === $defaultName,
+            'driver' => (string) ($config['driver'] ?? 'mysql'),
+            'target' => (string) ($config['database'] ?? $config['dbname'] ?? 'n/a'),
+            'status' => ((bool) ($config['enabled'] ?? true)) ? 'enabled' : 'disabled',
+        ];
+    }
+
+    return [
+        'title' => 'Nemesis Database Connections',
+        'count' => count($items),
+        'default' => $defaultName,
+        'connections' => $items,
+    ];
+}
+
+function docsRoots(): array
+{
+    $projectRoot = $GLOBALS['projectRoot'] ?? dirname(__FILE__);
+
+    return [
+        'docs' => rtrim((string) (getenv('NEMESIS_DOCS_ROOT') ?: ($projectRoot . '/docs')), '/'),
+        'public_docs' => rtrim((string) (getenv('NEMESIS_PUBLIC_DOCS_ROOT') ?: ($projectRoot . '/public/docs')), '/'),
+    ];
+}
+
+/**
+ * @return array<string, array{path:string,mtime:int,size:int}>
+ */
+function collectSyncFiles(string $root): array
+{
+    if (!is_dir($root)) {
+        return [];
+    }
+
+    $files = [];
+    $iterator = new \RecursiveIteratorIterator(
+        new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $item) {
+        if (!$item->isFile()) {
+            continue;
+        }
+
+        $relative = ltrim(str_replace('\\', '/', substr($item->getPathname(), strlen($root))), '/');
+        $files[$relative] = [
+            'path' => $item->getPathname(),
+            'mtime' => (int) @filemtime($item->getPathname()),
+            'size' => (int) @filesize($item->getPathname()),
+        ];
+    }
+
+    ksort($files);
+    return $files;
+}
+
+function ensureParentDirectory(string $path): void
+{
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+}
+
+function syncDocsTrees(string $docsRoot, string $publicDocsRoot, bool $dryRun = false): array
+{
+    $docsFiles = collectSyncFiles($docsRoot);
+    $publicFiles = collectSyncFiles($publicDocsRoot);
+    $allPaths = array_values(array_unique(array_merge(array_keys($docsFiles), array_keys($publicFiles))));
+    sort($allPaths);
+
+    $changes = [];
+    foreach ($allPaths as $relative) {
+        $docsFile = $docsFiles[$relative] ?? null;
+        $publicFile = $publicFiles[$relative] ?? null;
+
+        if ($docsFile === null && $publicFile === null) {
+            continue;
+        }
+
+        if ($docsFile !== null && $publicFile === null) {
+            $target = $publicDocsRoot . '/' . $relative;
+            if (!$dryRun) {
+                ensureParentDirectory($target);
+                copy($docsFile['path'], $target);
+            }
+            $changes[] = [
+                'path' => $relative,
+                'direction' => 'docs->public/docs',
+                'reason' => 'missing_in_public_docs',
+            ];
+            continue;
+        }
+
+        if ($docsFile === null && $publicFile !== null) {
+            $target = $docsRoot . '/' . $relative;
+            if (!$dryRun) {
+                ensureParentDirectory($target);
+                copy($publicFile['path'], $target);
+            }
+            $changes[] = [
+                'path' => $relative,
+                'direction' => 'public/docs->docs',
+                'reason' => 'missing_in_docs',
+            ];
+            continue;
+        }
+
+        if ($docsFile['mtime'] > $publicFile['mtime']) {
+            if (!$dryRun) {
+                copy($docsFile['path'], $publicDocsRoot . '/' . $relative);
+            }
+            $changes[] = [
+                'path' => $relative,
+                'direction' => 'docs->public/docs',
+                'reason' => 'docs_newer',
+            ];
+            continue;
+        }
+
+        if ($publicFile['mtime'] > $docsFile['mtime']) {
+            if (!$dryRun) {
+                copy($publicFile['path'], $docsRoot . '/' . $relative);
+            }
+            $changes[] = [
+                'path' => $relative,
+                'direction' => 'public/docs->docs',
+                'reason' => 'public_docs_newer',
+            ];
+            continue;
+        }
+
+        if ($docsFile['mtime'] === $publicFile['mtime']) {
+            $docsContent = @file_get_contents($docsFile['path']);
+            $publicContent = @file_get_contents($publicFile['path']);
+            if ($docsContent !== $publicContent) {
+                if (!$dryRun) {
+                    copy($docsFile['path'], $publicDocsRoot . '/' . $relative);
+                }
+                $changes[] = [
+                    'path' => $relative,
+                    'direction' => 'docs->public/docs',
+                    'reason' => 'same_mtime_docs_wins',
+                ];
+            }
+        }
+    }
+
+    return [
+        'docs_root' => $docsRoot,
+        'public_docs_root' => $publicDocsRoot,
+        'count' => count($changes),
+        'changes' => $changes,
+        'in_sync' => $changes === [],
+    ];
+}
+
+function dataRoot(): string
+{
+    $projectRoot = $GLOBALS['projectRoot'] ?? dirname(__FILE__);
+    return rtrim((string) (getenv('NEMESIS_PUBLIC_DATA_ROOT') ?: ($projectRoot . '/public/data')), '/');
+}
+
+function ipRulesPath(): string
+{
+    $projectRoot = $GLOBALS['projectRoot'] ?? dirname(__FILE__);
+    return rtrim((string) (getenv('NEMESIS_IP_RULES_PATH') ?: ($projectRoot . '/config/ip.php')), '/');
+}
+
+function loadIpRules(): array
+{
+    $path = ipRulesPath();
+    if (!is_file($path)) {
+        return [
+            'allow_all' => true,
+            'allow' => [],
+            'block' => [],
+            'trusted_proxies' => [],
+        ];
+    }
+
+    $config = require $path;
+    return is_array($config) ? $config : [];
+}
+
+function saveIpRules(array $config): void
+{
+    $path = ipRulesPath();
+    ensureParentDirectory($path);
+    $content = "<?php\n// Nemesis 7.1.0 | IP access rules | Updated: " . date('Y-m-d') . "\n\nreturn " . var_export($config, true) . ";\n";
+    file_put_contents($path, $content);
+}
+
+function normalizeRuleList(array $rules): array
+{
+    $rules = array_map(static fn($rule) => strtolower(trim((string) $rule)), $rules);
+    $rules = array_values(array_unique(array_filter($rules, static fn($rule) => $rule !== '')));
+    sort($rules);
+    return $rules;
+}
+
+function ipRulesPayload(array $config): array
+{
+    $policy = new \Nemesis\Support\IpAccess($config);
+    $status = $policy->status();
+
+    return [
+        'title' => 'Nemesis IP Access Rules',
+        'ip_rules_path' => ipRulesPath(),
+        'allow_all' => (bool) ($status['allow_all'] ?? true),
+        'allow_count' => count((array) ($status['allow'] ?? [])),
+        'block_count' => count((array) ($status['block'] ?? [])),
+        'trusted_proxy_count' => count((array) ($status['trusted_proxies'] ?? [])),
+        'rules' => $status,
+    ];
+}
+
+function defaultBangladeshSource(): string
+{
+    return (string) (getenv('NEMESIS_BANGLADESH_SOURCE') ?: 'https://raw.githubusercontent.com/jarir-in-atl/BangladeshLocations/refs/heads/main/bangladesh_locations.json');
+}
+
+function baseDataCatalog(): array
+{
+    return [
+        'countries.json' => [
+            'source' => 'Nemesis data:sync',
+            'items' => [
+                ['code' => 'BD', 'name' => 'Bangladesh', 'region' => 'Asia'],
+                ['code' => 'US', 'name' => 'United States', 'region' => 'North America'],
+                ['code' => 'IN', 'name' => 'India', 'region' => 'Asia'],
+                ['code' => 'PK', 'name' => 'Pakistan', 'region' => 'Asia'],
+                ['code' => 'GB', 'name' => 'United Kingdom', 'region' => 'Europe'],
+                ['code' => 'AE', 'name' => 'United Arab Emirates', 'region' => 'Asia' ],
+                ['code' => 'SA', 'name' => 'Saudi Arabia', 'region' => 'Asia' ],
+                ['code' => 'CN', 'name' => 'China', 'region' => 'Asia' ],
+                ['code' => 'RU', 'name' => 'Russia', 'region' => 'Europe/Asia' ],
+            ],
+        ],
+        'states.json' => [
+            'source' => 'Nemesis data:sync',
+            'items' => [
+                ['country_code' => 'BD', 'code' => 'BD-D', 'name' => 'Dhaka'],
+                ['country_code' => 'US', 'code' => 'US-CA', 'name' => 'California'],
+                ['country_code' => 'US', 'code' => 'US-NY', 'name' => 'New York'],
+                ['country_code' => 'IN', 'code' => 'IN-DL', 'name' => 'Delhi'],
+            ],
+        ],
+        'cities.json' => [
+            'source' => 'Nemesis data:sync',
+            'items' => [
+                ['country_code' => 'BD', 'state_code' => 'BD-D', 'name' => 'Dhaka', 'population' => null],
+                ['country_code' => 'BD', 'state_code' => 'BD-D', 'name' => 'Chattogram', 'population' => null],
+                ['country_code' => 'US', 'state_code' => 'US-CA', 'name' => 'San Francisco', 'population' => null],
+                ['country_code' => 'IN', 'state_code' => 'IN-DL', 'name' => 'New Delhi', 'population' => null],
+            ],
+        ],
+        'languages.json' => [
+            'source' => 'Nemesis data:sync',
+            'items' => [
+                ['code' => 'bn', 'name' => 'Bengali'],
+                ['code' => 'en', 'name' => 'English'],
+                ['code' => 'hi', 'name' => 'Hindi'],
+                ['code' => 'ar', 'name' => 'Arabic'],
+                ['code' => 'fa', 'name' => 'Persian'],
+                ['code' => 'ur', 'name' => 'Urdu'],
+                ['code' => 'ru', 'name' => 'Russian'],
+                ['code' => 'zh', 'name' => 'Chinese'],
+            ],
+        ],
+        'timezones.json' => [
+            'source' => 'Nemesis data:sync',
+            'items' => [
+                'Asia/Dhaka',
+                'Asia/Kolkata',
+                'Asia/Dubai',
+                'Asia/Tehran',
+                'Europe/London',
+                'America/New_York',
+                'America/Los_Angeles',
+                'Asia/Shanghai',
+                'Europe/Moscow',
+            ],
+        ],
+        'currencies.json' => [
+            'source' => 'Nemesis data:sync',
+            'items' => [
+                ['code' => 'BDT', 'name' => 'Bangladeshi Taka', 'symbol' => '৳'],
+                ['code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$'],
+                ['code' => 'INR', 'name' => 'Indian Rupee', 'symbol' => '₹'],
+                ['code' => 'PKR', 'name' => 'Pakistani Rupee', 'symbol' => '₨'],
+                ['code' => 'GBP', 'name' => 'British Pound', 'symbol' => '£'],
+                ['code' => 'SAR', 'name' => 'Saudi Riyal', 'symbol' => '﷼'],
+                ['code' => 'CNY', 'name' => 'Chinese Yuan', 'symbol' => '¥'],
+                ['code' => 'RUB', 'name' => 'Russian Ruble', 'symbol' => '₽'],
+            ],
+        ],
+        'countries_states_cities.json' => [
+            'countries' => ['countries.json'],
+            'states' => ['states.json'],
+            'cities' => ['cities.json'],
+        ],
+        'countries_states_cities_languages.json' => [
+            'countries_states_cities' => 'countries_states_cities.json',
+            'languages' => ['languages.json'],
+        ],
+        'countries_states_cities_languages_timezones.json' => [
+            'countries_states_cities_languages' => 'countries_states_cities_languages.json',
+            'timezones' => ['timezones.json'],
+        ],
+        'countries_states_cities_languages_timezones_currencies.json' => [
+            'countries_states_cities_languages_timezones' => 'countries_states_cities_languages_timezones.json',
+            'currencies' => ['currencies.json'],
+        ],
+        'countries_states_cities_languages_timezones_currencies_phone_codes.json' => [
+            'items' => [
+                ['country_code' => 'BD', 'phone_code' => '+880'],
+                ['country_code' => 'US', 'phone_code' => '+1'],
+                ['country_code' => 'IN', 'phone_code' => '+91'],
+                ['country_code' => 'PK', 'phone_code' => '+92'],
+                ['country_code' => 'GB', 'phone_code' => '+44'],
+                ['country_code' => 'AE', 'phone_code' => '+971'],
+                ['country_code' => 'SA', 'phone_code' => '+966'],
+                ['country_code' => 'CN', 'phone_code' => '+86'],
+                ['country_code' => 'RU', 'phone_code' => '+7'],
+            ],
+        ],
+        'countries_states_cities_languages_timezones_currencies_phone_codes_emails.json' => [
+            'items' => [
+                ['country_code' => 'BD', 'email_domain' => '.bd'],
+                ['country_code' => 'US', 'email_domain' => '.us'],
+                ['country_code' => 'IN', 'email_domain' => '.in'],
+            ],
+        ],
+        'countries_states_cities_languages_timezones_currencies_phone_codes_emails_urls.json' => [
+            'items' => [
+                ['country_code' => 'BD', 'url_suffix' => '.bd'],
+                ['country_code' => 'US', 'url_suffix' => '.us'],
+                ['country_code' => 'IN', 'url_suffix' => '.in'],
+            ],
+        ],
+    ];
+}
+
+function writeJsonFile(string $path, mixed $data, bool $force = false): bool
+{
+    if (file_exists($path) && !$force) {
+        return false;
+    }
+
+    ensureParentDirectory($path);
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    file_put_contents($path, $json . PHP_EOL);
+    return true;
+}
+
+function importBangladeshLocations(string $destination, string $source, bool $force = false): bool
+{
+    if (file_exists($destination) && !$force) {
+        return false;
+    }
+
+    $raw = null;
+    if (str_starts_with($source, 'http://') || str_starts_with($source, 'https://')) {
+        $raw = @file_get_contents($source);
+    } elseif (is_file($source)) {
+        $raw = @file_get_contents($source);
+    }
+
+    if ($raw === false || $raw === null) {
+        throw new \RuntimeException("Unable to import Bangladesh locations from [{$source}].");
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        throw new \RuntimeException("Bangladesh locations source did not contain valid JSON.");
+    }
+
+    ensureParentDirectory($destination);
+    file_put_contents($destination, json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL);
+    return true;
+}
+
+function resolveFrontendFramework(?string $framework, bool $defaultToServer = true): string
+{
+    $framework = $framework === null ? '' : strtolower(trim($framework));
+
+    if ($framework === '') {
+        return $defaultToServer ? 'server' : '';
+    }
+
+    $manager = \Nemesis\Frontend\FrontendManager::getInstance();
+
+    if (!$manager->supportsFramework($framework) && !$manager->isAllowed($framework)) {
+        throw new \RuntimeException("Unsupported frontend framework [{$framework}].");
+    }
+
+    if (!$manager->isAllowed($framework)) {
+        throw new \RuntimeException("Frontend framework [{$framework}] is not allowed.");
+    }
+
+    return $framework;
+}
+
+/**
+ * @return array<int, string>
+ */
+function collectPhpFiles(string $root): array
+{
+    if (is_file($root)) {
+        return str_ends_with($root, '.php') ? [$root] : [];
+    }
+
+    if (!is_dir($root)) {
+        return [];
+    }
+
+    $files = [];
+    $iterator = new \RecursiveIteratorIterator(
+        new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $item) {
+        if ($item->isFile() && str_ends_with($item->getFilename(), '.php')) {
+            $path = $item->getPathname();
+            if (str_contains($path, DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR)
+                || str_contains($path, DIRECTORY_SEPARATOR . '.git' . DIRECTORY_SEPARATOR)
+                || str_contains($path, DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR)) {
+                continue;
+            }
+
+            $files[] = $path;
+        }
+    }
+
+    sort($files);
+    return $files;
+}
+
+function runPhpLint(string $path): array
+{
+    $cmd = escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($path) . ' 2>&1';
+    $output = [];
+    $code = 0;
+    exec($cmd, $output, $code);
+
+    return [$code, implode("\n", $output)];
+}
+
+// Command-line argument parsing
+$command = $argv[1] ?? null;
+
+switch ($command) {
+    case 'make:controller':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:controller Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('controller', $name);
+            echo "Controller created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:model':
+        $name = null;
+        $connection = null;
+        foreach ($argv as $index => $arg) {
+            if ($index < 2) {
+                continue;
+            }
+
+            if ($arg === '--help' || $arg === '-h') {
+                echo "Usage: php nemesis make:model Name [--connection=name]\n";
+                echo "  Creates an App\\Models\\* model stub.\n";
+                echo "  Use --connection to pin the model to a named database connection.\n";
+                echo "  Without --connection, the model uses the default database connection.\n";
+                echo "  Use --list-connections to show available database connections.\n";
+                break 2;
+            }
+
+            if ($arg === '--list-connections') {
+                $payload = databaseConnectionsPayload();
+                echo $payload['title'] . ":\n\n";
+                foreach ($payload['connections'] as $item) {
+                    echo "  {$item['name']}" . (!empty($item['default']) ? " (default)" : "") . "\n";
+                    echo "    driver: {$item['driver']}\n";
+                    echo "    target: {$item['target']}\n";
+                }
+                break 2;
+            }
+
+            if (str_starts_with($arg, '--connection=')) {
+                $connection = substr($arg, 13);
+                continue;
+            }
+
+            if ($name === null) {
+                $name = $arg;
+            }
+        }
+        if (!$name) die("Usage: php nemesis make:model Name [--connection=name]\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $tokens = [];
+            if ($connection !== null && $connection !== '') {
+                $tokens['ConnectionProperty'] = "    protected ?string \$connection = '" . str_replace("'", "\\'", strtolower(trim($connection))) . "';";
+            }
+            $path = $scaffolder->generate('model', $name, $tokens);
+            echo "Model created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'db:list-connections':
+        $json = in_array('--json', $argv, true);
+        $pretty = in_array('--pretty', $argv, true);
+        $brief = in_array('--brief', $argv, true);
+        $payload = databaseConnectionsPayload();
+
+        if ($json) {
+            $flags = JSON_UNESCAPED_SLASHES;
+            if ($pretty && !$brief) {
+                $flags |= JSON_PRETTY_PRINT;
+            }
+            echo json_encode($payload, $flags) . "\n";
+            break;
+        }
+
+        echo "Nemesis Database Connections:\n\n";
+        if ($payload['connections'] === []) {
+            echo "No database connections configured.\n";
+            break;
+        }
+
+        foreach ($payload['connections'] as $item) {
+            echo "  {$item['name']}" . (!empty($item['default']) ? " (default)" : "") . "\n";
+            echo "    driver: {$item['driver']}\n";
+            echo "    target: {$item['target']}\n";
+            echo "    status: {$item['status']}\n";
+        }
+        break;
+
+    case 'make:middleware':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:middleware Name\n");
+        // Fixed 2026-04-03: src/Middleware/ deleted — all middleware in app/Http/Middleware/
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('middleware', $name);
+            echo "Middleware created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:request':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:request Name\n");
+        $name = preg_replace('/Request$/i', '', trim($name));
+        if ($name === '') die("Usage: php nemesis make:request Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('request', $name);
+            echo "Form request created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:migration':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:migration name\n");
+        $timestamp = date('Y_m_d_His');
+        $fileName = "{$timestamp}_{$name}.php";
+        $path = $projectRoot . "/database/migrations/{$fileName}";
+        $content = "<?php\n\nuse Nemesis\Database\Migration;\nuse Nemesis\Core\Database;\n\nclass {$name} extends Migration {\n    public function up() {\n        // Database::connect()->exec(\"CREATE TABLE ...\");\n    }\n\n    public function down() {\n        // Database::connect()->exec(\"DROP TABLE ...\");\n    }\n}\n";
+        file_put_contents($path, $content);
+        echo "Migration created at $path\n";
+        break;
+
+    case 'make:seeder':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:seeder Name\n");
+        $path = $projectRoot . "/database/seeders/{$name}.php";
+        $content = "<?php\n\nuse Nemesis\Database\Seeder;\nuse Nemesis\Core\Database;\n\nclass {$name} extends Seeder {\n    public function run() {\n        // Database::connect()->exec(\"INSERT INTO ...\");\n    }\n}\n";
+        file_put_contents($path, $content);
+        echo "Seeder created at $path\n";
+        break;
+
+    case 'migrate:run':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $manager = new \Nemesis\Database\MigrationManager($projectRoot . '/database/migrations');
+        $manager->migrate();
+
+        // Migrate Plugins
+        $pluginManager = \Nemesis\Core\PluginManager::getInstance();
+        $pluginManager->discover();
+        foreach ($pluginManager->getActive() as $name => $plugin) {
+            $path = $plugin['manifest']->getDirectory() . '/migrations';
+            if (is_dir($path)) {
+                echo "Running migrations for plugin: {$name}...\n";
+                $manager = new \Nemesis\Database\MigrationManager($path);
+                $manager->migrate();
+            }
+        }
+        break;
+
+    case 'migrate:rollback':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $manager = new \Nemesis\Database\MigrationManager($projectRoot . '/database/migrations');
+        $manager->rollback();
+        break;
+
+    case 'migrate:status':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $manager = new \Nemesis\Database\MigrationManager($projectRoot . '/database/migrations');
+        echo "Migration status:\n\n";
+        foreach ($manager->status() as $migration) {
+            echo sprintf("  %-8s %s\n", $migration['status'], $migration['migration']);
+        }
+        break;
+
+    case 'db:seed':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $name = $argv[2] ?? null;
+        $manager = new \Nemesis\Database\SeederManager($projectRoot . '/database/seeders');
+        $manager->seed($name);
+        break;
+
+    case 'db:dump':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $filename = $argv[2] ?? 'database_dump_' . date('Y_m_d_His') . '.sql';
+        $dumper = new \Nemesis\Database\DatabaseDumper();
+        if ($dumper->dump($filename)) {
+            echo "Database dumped successfully to $filename\n";
+        } else {
+            echo "Failed to dump database.\n";
+        }
+        break;
+
+    case 'db:truncate':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $truncator = new \Nemesis\Database\DatabaseTruncator();
+        if ($truncator->truncate()) {
+            echo "All tables truncated successfully.\n";
+        }
+        break;
+
+    case 'db:restore':
+        require_once $projectRoot . '/index.php'; // Bootstraps config and DB
+        $filename = $argv[2] ?? null;
+        if (!$filename) die("Usage: php nemesis db:restore filename.sql\n");
+        $restorer = new \Nemesis\Database\DatabaseRestorer();
+        if ($restorer->restore($filename)) {
+            echo "Database restored successfully from $filename\n";
+        }
+        break;
+
+    case 'schedule:run':
+        // Updated 2026-04-03: uses new Scheduler (replaces Schedule with global-$argv hack)
+        require_once $projectRoot . '/index.php';
+        $scheduler = new \Nemesis\Console\Scheduler();
+        $kernel    = new \App\Console\Kernel();
+        // Kernel::schedule() accepts both old Schedule and new Scheduler (same API)
+        $kernel->schedule($scheduler);
+        $scheduler->run();
+        echo "Scheduled tasks complete.\n";
+        break;
+
+    case 'queue:work':
+        require_once $projectRoot . '/index.php';
+        echo "Queue worker started. Processing jobs...\n";
+
+        while (true) {
+            $jobRecord = \Nemesis\Queue\Queue::pop();
+
+            if ($jobRecord) {
+                try {
+                    $job = unserialize($jobRecord['payload']);
+                    echo "Processing: " . get_class($job) . "\n";
+                    $job->handle();
+                    echo "Processed: " . get_class($job) . "\n";
+
+                    $driverName = getenv('QUEUE_DRIVER') ?: 'sync';
+                    if ($driverName === 'database') {
+                        $driver = new \Nemesis\Queue\Drivers\DatabaseDriver();
+                        $driver->delete($jobRecord['id']);
+                    }
+                } catch (\Exception $e) {
+                    echo "Job failed: " . $e->getMessage() . "\n";
+                }
+            } else {
+                usleep(1000000); // Wait 1 second if no job
+            }
+
+            // Allow maintenance mode check or graceful exit
+            if (file_exists($projectRoot . '/storage/framework/down')) exit;
+        }
+        break;
+
+    case 'make:job':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:job Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('job', $name);
+            echo "Job created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:mail':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:mail Name\n");
+        $name = preg_replace('/Mail$/i', '', trim($name));
+        if ($name === '') die("Usage: php nemesis make:mail Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('mail', $name);
+            echo "Mailable created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:policy':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:policy Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('policy', $name);
+            echo "Policy created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    // -------------------------------------------------------------------------
+    // Phase 7 — New make: commands (Section 11.4) | Added: 2026-04-03
+    // -------------------------------------------------------------------------
+
+    case 'make:event':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:event Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('event', $name);
+            echo "Event created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:listener':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:listener Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('listener', $name);
+            echo "Listener created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:trait':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:trait Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('trait', $name);
+            echo "Trait created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:repository':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:repository Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('repository', $name);
+            echo "Repository created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:entity':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:entity Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('entity', $name);
+            echo "Entity created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:dto':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:dto Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('dto', $name);
+            echo "DTO created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:transformer':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:transformer Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('transformer', $name);
+            echo "Transformer created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:manager':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:manager Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('manager', $name);
+            echo "Manager created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:handler':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:handler Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('handler', $name);
+            echo "Handler created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:interface':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:interface Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('interface', $name);
+            echo "Interface created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:factory':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:factory Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('factory', $name);
+            echo "Factory created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:filter':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:filter Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('filter', $name);
+            echo "Filter created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:widget':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:widget Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $paths = $scaffolder->generateWidget($name);
+            foreach ($paths as $p) echo "Widget file created at {$p}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:library':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:library Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('library', $name);
+            echo "Library created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:helper':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:helper name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generate('helper', $name);
+            echo "Helper created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:view':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:view path/to/view [--blade]\n");
+        $blade = in_array('--blade', $argv, true);
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generateView($name, $blade);
+            echo "View created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:layout':
+        $framework = $argv[2] ?? null;
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generateLayout($framework);
+            echo "Layout created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:admin-view':
+        $framework = $argv[2] ?? 'server';
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generateAdminView($framework);
+            echo "Admin view created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:profile-view':
+        $framework = $argv[2] ?? 'react';
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generateProfileView($framework);
+            echo "Profile view created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:settings-view':
+        $framework = $argv[2] ?? 'vue';
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $path = $scaffolder->generateSettingsView($framework);
+            echo "Settings view created at {$path}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:frontend-component':
+        $framework = $argv[2] ?? null;
+        $name = $argv[3] ?? null;
+        if (!$framework || !$name) die("Usage: php nemesis make:frontend-component framework Name\n");
+        try {
+            $framework = resolveFrontendFramework($framework, false);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $paths = $scaffolder->generateFrontendComponent($framework, $name);
+            foreach ($paths as $path) {
+                echo "Component file created at {$path}\n";
+            }
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:admin-component':
+        $framework = $argv[2] ?? 'server';
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $paths = $scaffolder->generateAdminComponent($framework);
+            foreach ($paths as $path) {
+                echo "Admin component file created at {$path}\n";
+            }
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:profile-component':
+        $framework = $argv[2] ?? 'react';
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $paths = $scaffolder->generateProfileComponent($framework);
+            foreach ($paths as $path) {
+                echo "Profile component file created at {$path}\n";
+            }
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:settings-component':
+        $framework = $argv[2] ?? 'vue';
+        try {
+            $framework = resolveFrontendFramework($framework);
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $paths = $scaffolder->generateSettingsComponent($framework);
+            foreach ($paths as $path) {
+                echo "Settings component file created at {$path}\n";
+            }
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:plugin':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:plugin Name\n");
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $dir = $scaffolder->generatePlugin($name);
+            echo "Plugin created at {$dir}\n";
+            echo "Enable with: php nemesis plugin:enable {$name}\n";
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n"; exit(1);
+        }
+        break;
+
+    case 'make:module':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:module Name\n");
+        $moduleDir = $projectRoot . "/app/Modules/{$name}";
+        if (is_dir($moduleDir)) die("Module [{$name}] already exists.\n");
+
+        mkdir($moduleDir, 0755, true);
+        mkdir("{$moduleDir}/Controllers", 0755, true);
+        mkdir("{$moduleDir}/Models", 0755, true);
+        mkdir("{$moduleDir}/Views", 0755, true);
+        mkdir("{$moduleDir}/Migrations", 0755, true);
+        mkdir("{$moduleDir}/Config", 0755, true);
+        mkdir("{$moduleDir}/Services", 0755, true);
+
+        // routes.php
+        $lowerName = strtolower($name);
+        $routesContent = "<?php\n\n// Routes for module: {$name}\n\n\$router->add('GET', '/{$lowerName}', [\\App\Modules\\{$name}\\Controllers\\{$name}Controller::class, 'index']);\n";
+        file_put_contents("{$moduleDir}/routes.php", $routesContent);
+
+        // Controller
+        $controllerContent = "<?php\nnamespace App\Modules\\{$name}\Controllers;\n\nuse Nemesis\Core\Controller;\n\nclass {$name}Controller extends Controller {\n    public function index() {\n        return \$this->render('{$lowerName}::index', ['name' => '{$name}']);\n    }\n}\n";
+        file_put_contents("{$moduleDir}/Controllers/{$name}Controller.php", $controllerContent);
+
+        // Default View
+        file_put_contents("{$moduleDir}/Views/index.php", "<h1>Welcome to the {$name} Module</h1>\n<p>This is a standard module view.</p>");
+
+        // Register View Namespace in routes.php (as requested in description for simplicity)
+        $viewRegistration = "\n\\Nemesis\\Core\\View::addNamespace('{$lowerName}', base_path('app/Modules/{$name}/Views'));\n";
+        file_put_contents("{$moduleDir}/routes.php", $viewRegistration, FILE_APPEND);
+
+        echo "Module [{$name}] generated successfully at $moduleDir\n";
+        break;
+
+    case 'make:resource':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis make:resource Name --fields=\"name:string,price:float\"\n");
+
+        $fieldsStr = '';
+        foreach ($argv as $arg) {
+            if (str_starts_with($arg, '--fields=')) {
+                $fieldsStr = substr($arg, 9);
+            }
+        }
+
+        $tableName = strtolower($name) . 's';
+
+        echo "Generating Resource: $name...\n";
+
+        // 1. Migration
+        $migrationName = "create_{$tableName}_table";
+        passthru("php nemesis make:migration $migrationName");
+        // Logic to update migration fields would go here or in a separate tool
+
+        // 2. Model
+        passthru("php nemesis make:model $name");
+
+        // 3. Controller (Resource)
+        $controllerPath = $projectRoot . "/app/Controllers/{$name}Controller.php";
+        $controllerContent = "<?php\nnamespace App\Controllers;\n\nuse App\Models\\{$name};\nuse Nemesis\Http\Request;\n\nclass {$name}Controller extends Controller {\n    public function index() {\n        return \$this->render('{$tableName}/index', ['{$tableName}' => (new {$name})->all()]);\n    }\n\n    public function create() {\n        return \$this->render('{$tableName}/create');\n    }\n\n    public function store(Request \$request) {\n        (new {$name})->create(\$request->all());\n        return redirect('/{$tableName}');\n    }\n\n    public function show(\$id) {\n        return \$this->render('{$tableName}/show', ['{$name}' => (new {$name})->find(\$id)]);\n    }\n}\n";
+        file_put_contents($controllerPath, $controllerContent);
+        echo "Controller created at $controllerPath\n";
+
+        // 4. Policy
+        passthru("php nemesis make:policy {$name}Policy");
+
+        // 5. Views
+        $viewDir = $projectRoot . "/app/Views/{$tableName}";
+        if (!is_dir($viewDir)) mkdir($viewDir, 0755, true);
+        file_put_contents("$viewDir/index.php", "<h1>$name List</h1>");
+        file_put_contents("$viewDir/create.php", "<h1>Create $name</h1>");
+        echo "Views created at $viewDir\n";
+
+        // 6. Routes
+        $routeFile = $projectRoot . '/routes/route.php';
+        $routeFileContent = file_get_contents($routeFile);
+        $newRoutes = "\n// Resource Routes for $name\n\$router->add('GET', '/{$tableName}', [\\App\Controllers\\{$name}Controller::class, 'index']);\n\$router->add('GET', '/{$tableName}/create', [\\App\Controllers\\{$name}Controller::class, 'create']);\n\$router->add('POST', '/{$tableName}', [\\App\Controllers\\{$name}Controller::class, 'store']);\n\$router->add('GET', '/{$tableName}/{id}', [\\App\Controllers\\{$name}Controller::class, 'show']);\n";
+
+        if (strpos($routeFileContent, 'return $router;') !== false) {
+            $routeFileContent = str_replace('return $router;', $newRoutes . "\nreturn \$router;", $routeFileContent);
+        } else {
+            $routeFileContent .= $newRoutes;
+        }
+        file_put_contents($routeFile, $routeFileContent);
+        echo "Routes injected into $routeFile\n";
+
+        echo "\nResource generated successfully!\n";
+        break;
+
+    case 'model:health':
+        echo "Scanning ORM models for health issues...\n";
+        $modelDir = $projectRoot . '/app/Models';
+        if (!is_dir($modelDir)) die("Models directory not found.\n");
+
+        $models = glob($modelDir . '/*.php');
+        $db = \Nemesis\Core\Database::getInstance();
+        if (!$db) {
+             $config = require $projectRoot . '/config/config.php';
+             \Nemesis\Core\Database::connect($config['database']);
+             $db = \Nemesis\Core\Database::getInstance();
+        }
+
+        foreach ($models as $file) {
+            $name = basename($file, '.php');
+            echo "\nChecking Model: $name\n";
+
+            // Heuristic Table Name
+            $tableName = strtolower($name) . 's';
+            // Try to find property 'table' in file content
+            $content = file_get_contents($file);
+            if (preg_match('/protected \$table\s*=\s*\'(.+)\'/', $content, $matches)) {
+                $tableName = $matches[1];
+            }
+
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM $tableName")->fetchAll(\PDO::FETCH_ASSOC);
+                $indexes = $db->query("SHOW INDEX FROM $tableName")->fetchAll(\PDO::FETCH_ASSOC);
+                $indexCols = array_column($indexes, 'Column_name');
+
+                foreach ($columns as $column) {
+                    $colName = $column['Field'];
+                    if (str_ends_with($colName, '_id') && !in_array($colName, $indexCols)) {
+                        echo "  [WARNING] Column '$colName' is likely a foreign key but lacks an index!\n";
+                    }
+                }
+
+                // N+1 Risk Placeholder
+                if (strpos($content, 'function ') !== false && strpos($content, '->where(') !== false) {
+                    // Very simple check
+                }
+
+                echo "  [OK] Schema checks passed.\n";
+
+            } catch (\Exception $e) {
+                echo "  [ERROR] Could not analyze table '$tableName': " . $e->getMessage() . "\n";
+            }
+        }
+        echo "\nHealth scan complete.\n";
+        break;
+
+    case 'api:probe':
+        echo "Probing registered API routes...\n";
+        $router = require $projectRoot . '/routes/route.php';
+        $routes = $router->getRoutes();
+        $container = \Nemesis\Core\Container::getInstance() ?: \Nemesis\Core\Container::setInstance(new \Nemesis\Core\Container());
+        $container->singleton(\Nemesis\Http\Request::class);
+        $kernel = new \App\Http\Kernel();
+
+        $successCount = 0;
+        $failCount = 0;
+
+        foreach ($routes as $route) {
+            $method = $route['method'];
+            $uri = $route['uri'];
+
+            // Skip routes with parameters for now (too complex to auto-fill)
+            if (strpos($uri, '{') !== false) {
+                // echo "  [SKIP] $method $uri (Parameter resolution not supported)\n";
+                continue;
+            }
+
+            if ($method !== 'GET') {
+                 // echo "  [SKIP] $method $uri (Only GET routes are probed)\n";
+                 continue;
+            }
+
+            echo "  Probing $method $uri... ";
+
+            try {
+                // Mock request
+                $_SERVER['REQUEST_URI'] = $uri;
+                $_SERVER['REQUEST_METHOD'] = $method;
+                $request = $container->make(\Nemesis\Http\Request::class);
+
+                ob_start();
+                (new \Nemesis\Http\Pipeline())
+                    ->send($request)
+                    ->through($kernel->getMiddleware())
+                    ->then(function($request) use ($router, $uri, $method) {
+                        return $router->dispatch($uri, $method);
+                    });
+                $response = ob_get_clean();
+
+                // Simple JSON check
+                json_decode($response);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    echo "[OK] (JSON)\n";
+                } else {
+                    echo "[OK] (HTML/Text)\n";
+                }
+                $successCount++;
+            } catch (\Exception $e) {
+                echo "[FAIL] " . $e->getMessage() . "\n";
+                $failCount++;
+            }
+        }
+
+        echo "\nProbe complete: $successCount Success, $failCount Failed.\n";
+        break;
+
+    case 'env:doctor':
+        echo "Nemesis Environment Doctor is scanning your setup...\n";
+
+        $errors = [];
+        $warnings = [];
+
+        // 1. PHP Version
+        echo "  [CHECK] PHP Version: " . PHP_VERSION . "... ";
+        if (version_compare(PHP_VERSION, '8.0.0', '<')) {
+            echo "[FAIL]\n";
+            $errors[] = "PHP 8.0+ is required.";
+        } else {
+            echo "[OK]\n";
+        }
+
+        // 2. Extensions
+        $reqExts = ['pdo', 'openssl', 'mbstring', 'curl', 'fileinfo', 'zip'];
+        foreach ($reqExts as $ext) {
+            echo "  [CHECK] Extension '$ext'... ";
+            if (!extension_loaded($ext)) {
+                echo "[FAIL]\n";
+                $errors[] = "Extension '$ext' is missing.";
+            } else {
+                echo "[OK]\n";
+            }
+        }
+
+        // 3. .env file
+        echo "  [CHECK] .env file... ";
+        if (!file_exists($projectRoot . '/.env')) {
+            echo "[FAIL]\n";
+            $errors[] = ".env file not found.";
+        } else {
+            echo "[OK]\n";
+        }
+
+        // 4. APP_KEY
+        echo "  [CHECK] APP_KEY... ";
+        if (!getenv('APP_KEY') || strlen(getenv('APP_KEY')) < 32) {
+            echo "[FAIL]\n";
+            $errors[] = "APP_KEY is missing or too short.";
+        } else {
+            echo "[OK]\n";
+        }
+
+        // 5. Writable Folders
+        $writable = ['storage', 'storage/cache', 'storage/logs', 'storage/framework'];
+        foreach ($writable as $dir) {
+            $path = $projectRoot . '/' . $dir;
+            echo "  [CHECK] Writable: $dir... ";
+            if (!is_dir($path)) {
+                @mkdir($path, 0755, true);
+            }
+            if (!is_writable($path)) {
+                echo "[FAIL]\n";
+                $errors[] = "Directory '$dir' is not writable.";
+            } else {
+                echo "[OK]\n";
+            }
+        }
+
+        // 6. DB Connection — Updated: 2026-04-06 — driver-aware (sqlite/mysql/pgsql)
+        echo "  [CHECK] Database connection... ";
+        try {
+            $config = require $projectRoot . '/config/config.php';
+            $dbcfg  = $config['database'];
+            $driver = strtolower($dbcfg['driver'] ?? 'sqlite');
+
+            if ($driver === 'sqlite') {
+                $path = $dbcfg['database'] ?? ':memory:';
+                if ($path !== ':memory:') {
+                    $dir = dirname($path);
+                    if (!is_dir($dir)) mkdir($dir, 0755, true);
+                }
+                $db = new \PDO("sqlite:{$path}");
+            } elseif ($driver === 'pgsql') {
+                $db = new \PDO(
+                    "pgsql:host={$dbcfg['host']};port={$dbcfg['port']};dbname={$dbcfg['dbname']}",
+                    $dbcfg['username'], $dbcfg['password']
+                );
+            } else {
+                $db = new \PDO(
+                    "mysql:host={$dbcfg['host']};port={$dbcfg['port']};dbname={$dbcfg['dbname']}",
+                    $dbcfg['username'], $dbcfg['password']
+                );
+            }
+            echo "[OK]\n";
+        } catch (\Exception $e) {
+            echo "[FAIL]\n";
+            $errors[] = "DB Connection failed: " . $e->getMessage();
+        }
+
+        if (empty($errors)) {
+            echo "\nGreat! Your environment looks healthy.\n";
+        } else {
+            echo "\nDoctor found " . count($errors) . " issues:\n";
+            foreach ($errors as $err) echo "  - ERROR: $err\n";
+        }
+        break;
+
+    case 'make:auth':
+        // Phase 16 — scaffold auth controllers + routes | 2026-04-06
+        $authControllerDir = $projectRoot . '/app/Controllers/Auth';
+        if (!is_dir($authControllerDir)) mkdir($authControllerDir, 0755, true);
+
+        $controllers = [
+            'LoginController' => <<<'PHP'
+<?php
+declare(strict_types=1);
+namespace App\Controllers\Auth;
+
+use Nemesis\Auth\AuthManager;
+use Nemesis\Http\Request;
+use Nemesis\Http\Response;
+
+class LoginController
+{
+    public function login(Request $request): Response
+    {
+        $data   = $request->validate(['email' => 'required|email', 'password' => 'required']);
+        $tokens = AuthManager::attempt($data);
+        if (!$tokens) {
+            return Response::json(['error' => 'Invalid credentials.'], 401);
+        }
+        return Response::json($tokens);
+    }
+
+    public function refresh(Request $request): Response
+    {
+        $refresh = $request->input('refresh_token');
+        if (!$refresh) return Response::json(['error' => 'refresh_token required.'], 422);
+        try {
+            $payload = ['sub' => 0]; // reload from DB in production
+            return Response::json(AuthManager::refresh($refresh, $payload));
+        } catch (\Throwable $e) {
+            return Response::json(['error' => $e->getMessage()], 401);
+        }
+    }
+
+    public function logout(Request $request): Response
+    {
+        AuthManager::logout($request);
+        return Response::json(['message' => 'Logged out successfully.']);
+    }
+}
+PHP,
+            'RegisterController' => <<<'PHP'
+<?php
+declare(strict_types=1);
+namespace App\Controllers\Auth;
+
+use Nemesis\Core\Database;
+use Nemesis\Http\Request;
+use Nemesis\Http\Response;
+
+class RegisterController
+{
+    public function register(Request $request): Response
+    {
+        $data = $request->validate([
+            'name'                  => 'required|min:2',
+            'email'                 => 'required|email',
+            'password'              => 'required|min:8',
+            'password_confirmation' => 'required',
+        ]);
+
+        if ($data['password'] !== $data['password_confirmation']) {
+            return Response::json(['error' => 'Passwords do not match.'], 422);
+        }
+
+        $exists = Database::view("SELECT id FROM users WHERE email = ? LIMIT 1", [$data['email']]);
+        if ($exists) return Response::json(['error' => 'Email already registered.'], 409);
+
+        Database::statement(
+            "INSERT INTO users (name, email, password, created_at) VALUES (?, ?, ?, ?)",
+            [$data['name'], $data['email'], password_hash($data['password'], PASSWORD_BCRYPT), date('Y-m-d H:i:s')]
+        );
+
+        return Response::json(['message' => 'Registration successful.'], 201);
+    }
+}
+PHP,
+            'TwoFactorController' => <<<'PHP'
+<?php
+declare(strict_types=1);
+namespace App\Controllers\Auth;
+
+use Nemesis\Auth\Totp;
+use Nemesis\Auth\AuthManager;
+use Nemesis\Http\Request;
+use Nemesis\Http\Response;
+
+class TwoFactorController
+{
+    public function setup(Request $request): Response
+    {
+        $user  = AuthManager::user($request);
+        $totp  = new Totp(issuer: getenv('APP_NAME') ?: 'Nemesis', label: $user['email'] ?? '');
+        return Response::json([
+            'secret'      => $totp->getSecret(),
+            'qr_uri'      => $totp->getProvisioningUri(),
+        ]);
+    }
+
+    public function verify(Request $request): Response
+    {
+        $data = $request->validate(['secret' => 'required', 'code' => 'required']);
+        $totp = new Totp($data['secret']);
+        if (!$totp->verify($data['code'])) {
+            return Response::json(['error' => 'Invalid TOTP code.'], 422);
+        }
+        return Response::json(['message' => '2FA verified successfully.']);
+    }
+
+    public function backupCodes(Request $request): Response
+    {
+        $user  = AuthManager::user($request);
+        $codes = Totp::generateBackupCodes($user['id']);
+        return Response::json(['backup_codes' => $codes, 'warning' => 'Store these safely. They will not be shown again.']);
+    }
+}
+PHP,
+        ];
+
+        foreach ($controllers as $name => $stub) {
+            $path = "{$authControllerDir}/{$name}.php";
+            if (!file_exists($path)) {
+                file_put_contents($path, $stub);
+                echo "Created: app/Controllers/Auth/{$name}.php\n";
+            } else {
+                echo "Skipped (exists): app/Controllers/Auth/{$name}.php\n";
+            }
+        }
+
+        // Append auth routes hint
+        $routeFile = $projectRoot . '/routes/api.php';
+        $hint = "\n// --- Auth routes (generated by make:auth) ---\n"
+              . "// \$router->post('/auth/login',    [App\\Controllers\\Auth\\LoginController::class, 'login']);\n"
+              . "// \$router->post('/auth/refresh',  [App\\Controllers\\Auth\\LoginController::class, 'refresh']);\n"
+              . "// \$router->post('/auth/logout',   [App\\Controllers\\Auth\\LoginController::class, 'logout'])->middleware('auth');\n"
+              . "// \$router->post('/auth/register', [App\\Controllers\\Auth\\RegisterController::class, 'register']);\n"
+              . "// \$router->post('/auth/2fa/setup',[App\\Controllers\\Auth\\TwoFactorController::class, 'setup'])->middleware('auth');\n";
+
+        file_put_contents($routeFile, $hint, FILE_APPEND);
+        echo "\nAuth routes hint appended to routes/api.php\n";
+        echo "✓ make:auth complete. Uncomment routes in routes/api.php to activate.\n";
+        break;
+
+    case 'make:social-auth':
+        // Phase 17 — scaffold social auth controller + route hints | 2026-04-06
+        $driverArg   = strtolower($argv[2] ?? 'google');
+        $driverTitle = ucfirst($driverArg === 'x' ? 'X' : $driverArg);
+        $socialCtrlDir = $projectRoot . '/app/Controllers/Auth';
+        if (!is_dir($socialCtrlDir)) mkdir($socialCtrlDir, 0755, true);
+
+        $socialCtrlFile = $socialCtrlDir . '/Social' . $driverTitle . 'Controller.php';
+        if (file_exists($socialCtrlFile)) {
+            echo "Controller already exists: app/Controllers/Auth/Social{$driverTitle}Controller.php\n";
+        } else {
+            $socialCtrlContent = '<?php' . PHP_EOL
+                . 'declare(strict_types=1);' . PHP_EOL . PHP_EOL
+                . '// Nemesis 6.0 | Phase 17 — generated by make:social-auth | 2026-04-06' . PHP_EOL . PHP_EOL
+                . 'namespace App\Controllers\Auth;' . PHP_EOL . PHP_EOL
+                . 'use Nemesis\Auth\Social\SocialAuth;' . PHP_EOL
+                . 'use Nemesis\Http\Request;' . PHP_EOL
+                . 'use Nemesis\Http\Response;' . PHP_EOL . PHP_EOL
+                . 'class Social' . $driverTitle . 'Controller' . PHP_EOL
+                . '{' . PHP_EOL
+                . '    /** Step 1 — redirect to ' . $driverTitle . ' OAuth. GET /auth/' . $driverArg . '/redirect */' . PHP_EOL
+                . '    public function redirect(Request $request): Response' . PHP_EOL
+                . '    {' . PHP_EOL
+                . '        $provider = SocialAuth::driver(\'' . $driverArg . '\');' . PHP_EOL
+                . '        $url      = $provider->getAuthorizationUrl();' . PHP_EOL
+                . '        $_SESSION[\'oauth_state_' . $driverArg . '\'] = $provider->getState();' . PHP_EOL
+                . '        return Response::redirect($url);' . PHP_EOL
+                . '    }' . PHP_EOL . PHP_EOL
+                . '    /** Step 2 — handle callback, return JWT pair. GET /auth/' . $driverArg . '/callback */' . PHP_EOL
+                . '    public function callback(Request $request): Response' . PHP_EOL
+                . '    {' . PHP_EOL
+                . '        $code          = (string) ($_GET[\'code\']  ?? \'\');' . PHP_EOL
+                . '        $state         = (string) ($_GET[\'state\'] ?? \'\');' . PHP_EOL
+                . '        $expectedState = (string) ($_SESSION[\'oauth_state_' . $driverArg . '\'] ?? \'\');' . PHP_EOL
+                . '        if (!$code) return Response::json([\'error\' => \'Missing OAuth code\'], 400);' . PHP_EOL
+                . '        try {' . PHP_EOL
+                . '            $socialUser = SocialAuth::handleCallback(\'' . $driverArg . '\', $code, $state, $expectedState);' . PHP_EOL
+                . '            $tokens     = SocialAuth::findOrCreateUser($socialUser);' . PHP_EOL
+                . '            unset($_SESSION[\'oauth_state_' . $driverArg . '\']);' . PHP_EOL
+                . '            return Response::json($tokens);' . PHP_EOL
+                . '        } catch (\Throwable $e) {' . PHP_EOL
+                . '            return Response::json([\'error\' => $e->getMessage()], 401);' . PHP_EOL
+                . '        }' . PHP_EOL
+                . '    }' . PHP_EOL
+                . '}' . PHP_EOL;
+
+            file_put_contents($socialCtrlFile, $socialCtrlContent);
+            echo "✓ Created: app/Controllers/Auth/Social{$driverTitle}Controller.php\n";
+        }
+
+        // Append route hints
+        $socialRouteFile = $projectRoot . '/routes/api.php';
+        if (file_exists($socialRouteFile)) {
+            $socialHint = "\n// --- {$driverTitle} Social Auth routes (make:social-auth {$driverTitle}) ---\n"
+                . "// \$router->get('/auth/{$driverArg}/redirect', [App\\Controllers\\Auth\\Social{$driverTitle}Controller::class, 'redirect']);\n"
+                . "// \$router->get('/auth/{$driverArg}/callback', [App\\Controllers\\Auth\\Social{$driverTitle}Controller::class, 'callback']);\n";
+            file_put_contents($socialRouteFile, $socialHint, FILE_APPEND);
+            echo "✓ Route hints appended to routes/api.php\n";
+        }
+
+        // Env var reminder
+        $upperDriver = strtoupper($driverArg);
+        echo PHP_EOL . "Next steps — add to .env:" . PHP_EOL;
+        echo "  {$upperDriver}_CLIENT_ID=your-client-id" . PHP_EOL;
+        echo "  {$upperDriver}_CLIENT_SECRET=your-client-secret" . PHP_EOL;
+        echo "  {$upperDriver}_REDIRECT=https://yourdomain.com/auth/{$driverArg}/callback" . PHP_EOL;
+        echo PHP_EOL . "✓ make:social-auth {$driverTitle} complete." . PHP_EOL;
+        break;
+
+    case 'schedule:run':
+        // Phase 18 — run due scheduled tasks | 2026-04-06
+        define('NEMESIS_BASE_PATH', $projectRoot);
+        define('NEMESIS_BIN', 'php ' . escapeshellarg($projectRoot . '/nemesis'));
+
+        $kernelFile = $projectRoot . '/app/Console/Kernel.php';
+        if (!file_exists($kernelFile)) {
+            echo "No app/Console/Kernel.php found. Run `php nemesis make:schedule-kernel` to create one.\n";
+            break;
+        }
+
+        require_once $kernelFile;
+
+        $scheduler = new Nemesis\Console\Scheduler();
+        $kernel    = new App\Console\Kernel();
+        $kernel->schedule($scheduler);
+
+        $ran = $scheduler->run();
+        if ($ran === 0) {
+            echo '[' . date('Y-m-d H:i:s') . '] No tasks due.' . PHP_EOL;
+        }
+        break;
+
+    case 'schedule:list':
+        // Phase 18 — list all scheduled tasks | 2026-04-06
+        define('NEMESIS_BASE_PATH', $projectRoot);
+        define('NEMESIS_BIN', 'php ' . escapeshellarg($projectRoot . '/nemesis'));
+
+        $schedKernelFile = $projectRoot . '/app/Console/Kernel.php';
+        if (!file_exists($schedKernelFile)) {
+            echo "No app/Console/Kernel.php found.\n";
+            break;
+        }
+
+        require_once $schedKernelFile;
+
+        $schedScheduler = new Nemesis\Console\Scheduler();
+        $schedKernel    = new App\Console\Kernel();
+        $schedKernel->schedule($schedScheduler);
+
+        $tasks = $schedScheduler->getTasks();
+        if (empty($tasks)) {
+            echo "No scheduled tasks registered.\n";
+            break;
+        }
+
+        echo PHP_EOL;
+        printf("%-30s %-20s %-40s\n", 'Name', 'Expression', 'Description');
+        echo str_repeat('-', 92) . PHP_EOL;
+        foreach ($tasks as $task) {
+            $name = $task->getName() ?? '(anonymous)';
+            $expr = $task->getExpression();
+            $desc = $task->getDescription() ?? '';
+            printf("%-30s %-20s %-40s\n", $name, $expr, $desc);
+        }
+        echo PHP_EOL;
+        echo "Cron entry: * * * * * php {$projectRoot}/nemesis schedule:run >> /dev/null 2>&1" . PHP_EOL . PHP_EOL;
+        break;
+
+    case 'websocket:start':
+        // Phase 20 — start WebSocket server | 2026-04-06
+        define('NEMESIS_BASE_PATH', $projectRoot);
+
+        // Parse --host and --port options
+        $wsHost = '127.0.0.1';
+        $wsPort = 6001;
+        foreach (array_slice($argv, 2) as $arg) {
+            if (str_starts_with($arg, '--host=')) $wsHost = substr($arg, 7);
+            if (str_starts_with($arg, '--port=')) $wsPort = (int) substr($arg, 7);
+        }
+
+        $wsAppKey    = (string) (getenv('WS_APP_KEY')    ?: 'nemesis-key');
+        $wsAppSecret = (string) (getenv('WS_APP_SECRET') ?: 'nemesis-secret');
+
+        $wsServer = new Nemesis\Broadcasting\WebSocketServer($wsHost, $wsPort, $wsAppKey, $wsAppSecret);
+
+        echo "Starting Nemesis WebSocket server..." . PHP_EOL;
+        echo "  Host:       {$wsHost}" . PHP_EOL;
+        echo "  Port:       {$wsPort}" . PHP_EOL;
+        echo "  App Key:    {$wsAppKey}" . PHP_EOL;
+        echo "  Auth URL:   POST /broadcasting/auth" . PHP_EOL . PHP_EOL;
+        echo "Frontend (pusher-js):" . PHP_EOL;
+        echo "  const pusher = new Pusher('{$wsAppKey}', {" . PHP_EOL;
+        echo "      wsHost: '{$wsHost}', wsPort: {$wsPort}," . PHP_EOL;
+        echo "      forceTLS: false, cluster: 'mt1'," . PHP_EOL;
+        echo "      authEndpoint: '/broadcasting/auth'," . PHP_EOL;
+        echo "  });" . PHP_EOL . PHP_EOL;
+
+        $wsServer->start();
+        break;
+
+    case 'auth:rotate':
+        echo "Rotating Application Secrets...\n";
+        $envFile = $projectRoot . '/.env';
+        if (!file_exists($envFile)) die("Error: .env file not found.\n");
+
+        $content = file_get_contents($envFile);
+        $newKey = bin2hex(random_bytes(32));
+
+        if (strpos($content, 'APP_KEY=') !== false) {
+            $content = preg_replace('/APP_KEY=.*/', "APP_KEY=$newKey", $content);
+        } else {
+            $content .= "\nAPP_KEY=$newKey\n";
+        }
+
+        file_put_contents($envFile, $content);
+        echo "✅ APP_KEY has been rotated successully.\n";
+        echo "⚠️ NOTE: This invalidated all current sessions and encrypted cookies.\n";
+        break;
+
+    case 'app:mirror':
+        echo "Creating a Read-Only API Mirror...\n";
+        echo "This command spins up a clone of your API with all routes forced to READ-ONLY mode.\n";
+        echo "Perfect for frontend teams to test against without mutating real data.\n";
+        echo "Starting mirror server on http://localhost:8001...\n";
+        // Logic: Sets a temporary ENV 'API_READ_ONLY=true' and proxy to 'serve'
+        putenv('API_READ_ONLY=true');
+        $docRoot = '"' . realpath($projectRoot . DIRECTORY_SEPARATOR . 'public') . '"';
+        exec("php -S localhost:8001 -t $docRoot");
+        break;
+
+    case 'api:docs':
+        echo "Generating Interactive API Documentation...\n";
+        $router = require $projectRoot . '/routes/route.php';
+        $routes = $router->getRoutes();
+        $html = "<html><head><title>Nemesis API Explorer</title><style>body{font-family:sans-serif;padding:40px;background:#f7fafc} .route{background:#fff;padding:15px;margin-bottom:10px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1)} .method{font-weight:bold;color:#3182ce;margin-right:10px} .uri{color:#4a5568}</style></head><body><h1>API Explorer</h1>";
+        foreach ($routes as $r) {
+            $html .= "<div class='route'><span class='method'>{$r['method']}</span><span class='uri'>{$r['uri']}</span></div>";
+        }
+        $html .= "</body></html>";
+        file_put_contents($projectRoot . '/public/docs.html', $html);
+        echo "✅ Documentation generated at public/docs.html\n";
+        break;
+
+    case 'optimize':
+        echo "Warming up application caches...\n";
+        passthru("php nemesis config:cache");
+        passthru("php nemesis route:cache");
+        echo "✅ Application optimized for production.\n";
+        break;
+
+    case 'deadcode:find':
+        echo "Scanning codebase for dead code (Routes never hit, unused Controllers)...\n";
+        $router = require $projectRoot . '/routes/route.php';
+        $routes = $router->getRoutes();
+        $controllerDir = $projectRoot . '/app/Controllers';
+        $controllers = glob($controllerDir . '/*.php');
+
+        $usedControllers = [];
+        foreach ($routes as $route) {
+            $action = $route['action'];
+            if (is_array($action) && is_string($action[0])) {
+                $usedControllers[] = basename(str_replace('\\', '/', $action[0]));
+            }
+        }
+
+        echo "Found " . count($controllers) . " Controllers.\n";
+        foreach ($controllers as $file) {
+            $name = basename($file, '.php');
+            if ($name === 'Controller') continue; // Skip base
+            if (!in_array($name, $usedControllers)) {
+                echo "  [DEAD CODE?] Controller '$name' is not referenced in any route.\n";
+            }
+        }
+
+        echo "\nScan complete.\n";
+        break;
+
+    case 'route:cache':
+    case 'route:clear':
+    case 'route:list':
+    case 'route:export':
+    case 'route:diagnose':
+    case 'route': // Support "route cache" / "route clear"
+        $routeArgs = array_slice($argv, 2);
+        $routeOptions = [
+            'method' => null,
+            'framework' => null,
+            'middleware' => null,
+            'format' => 'json',
+            'path' => null,
+            'uri' => null,
+            'host' => null,
+            'json' => false,
+            'json_pretty' => true,
+        ];
+        $routePositionals = [];
+        $routeVerb = $routeArgs[0] ?? '';
+        $routeAction = $routeArgs[1] ?? '';
+
+        foreach ($routeArgs as $arg) {
+            if (!is_string($arg)) {
+                continue;
+            }
+
+            if (str_starts_with($arg, '--method=')) {
+                $routeOptions['method'] = substr($arg, 9);
+            } elseif (str_starts_with($arg, '--framework=')) {
+                $routeOptions['framework'] = substr($arg, 12);
+            } elseif (str_starts_with($arg, '--middleware=')) {
+                $routeOptions['middleware'] = substr($arg, 13);
+            } elseif (str_starts_with($arg, '--format=')) {
+                $routeOptions['format'] = strtolower(substr($arg, 9));
+            } elseif (str_starts_with($arg, '--host=')) {
+                $routeOptions['host'] = substr($arg, 7);
+            } elseif ($arg === '--json') {
+                $routeOptions['json'] = true;
+            } elseif ($arg === '--pretty') {
+                $routeOptions['json_pretty'] = true;
+            } elseif ($arg === '--brief') {
+                $routeOptions['json_pretty'] = false;
+            } elseif ($arg !== '' && $arg[0] !== '-') {
+                if (!in_array($arg, ['cache', 'clear', 'list', 'export', 'diagnose'], true)) {
+                    $routePositionals[] = $arg;
+                }
+            }
+        }
+
+        if (($command === 'route:clear') || ($routeVerb === 'clear') || ($routeVerb === 'cache' && $routeAction === 'clear')) {
+            \Nemesis\Router\Router::clearCache();
+            echo "Route cache cleared.\n";
+        } elseif ($command === 'route:diagnose' || $routeVerb === 'diagnose') {
+            require_once $projectRoot . '/vendor/autoload.php';
+            \Nemesis\Core\Config::load($projectRoot);
+            $router = require $projectRoot . '/routes/route.php';
+            $uri = $routeOptions['uri'] ?? ($routePositionals[0] ?? null);
+            $method = $routeOptions['method'] ?? ($routePositionals[1] ?? 'GET');
+
+            if (!$uri || str_starts_with((string) $uri, '--')) {
+                fwrite(STDERR, "Usage: php nemesis route:diagnose /uri [METHOD] [--host=example.com]\n");
+                exit(1);
+            }
+
+            if (str_starts_with((string) $method, '--')) {
+                $method = 'GET';
+            }
+
+            $report = $router->matchDiagnostics($uri, $method, $routeOptions['host']);
+            if ($routeOptions['json']) {
+                $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+                if ($routeOptions['json_pretty']) {
+                    $jsonFlags |= JSON_PRETTY_PRINT;
+                }
+                echo json_encode($report, $jsonFlags) . PHP_EOL;
+                break;
+            }
+
+            $output = new \Nemesis\Console\Output(false);
+            $output->info('Route diagnostics');
+            $output->line('Requested: ' . json_encode($report['requested'], JSON_UNESCAPED_SLASHES));
+            $output->line('Matched: ' . ($report['matched'] ? 'yes' : 'no'));
+            if (!empty($report['matched_route'])) {
+                $output->line('Matched route: ' . json_encode($report['matched_route'], JSON_UNESCAPED_SLASHES));
+            }
+            if (!empty($report['fallback_route'])) {
+                $output->line('Fallback route: ' . json_encode($report['fallback_route'], JSON_UNESCAPED_SLASHES));
+            }
+            $output->line('Checked routes: ' . count($report['checked_routes'] ?? []));
+            $output->newLine();
+            $rows = [];
+            foreach (($report['checked_routes'] ?? []) as $candidate) {
+                $rows[] = [
+                    (string) ($candidate['index'] ?? ''),
+                    (string) ($candidate['method'] ?? ''),
+                    (string) ($candidate['uri'] ?? ''),
+                    (string) ($candidate['name'] ?? ''),
+                    (string) ($candidate['framework'] ?? ''),
+                    !empty($candidate['matched']) ? 'yes' : 'no',
+                    !empty($candidate['reasons']) ? implode(',', (array) $candidate['reasons']) : '',
+                ];
+            }
+            $output->table(['#', 'Method', 'URI', 'Name', 'Framework', 'Match', 'Reasons'], $rows);
+        } elseif ($command === 'route:list' || $routeVerb === 'list') {
+            require_once $projectRoot . '/vendor/autoload.php';
+            \Nemesis\Core\Config::load($projectRoot);
+            $router = require $projectRoot . '/routes/route.php';
+            $output = new \Nemesis\Console\Output(false);
+            $filters = array_filter([
+                'method' => $routeOptions['method'],
+                'framework' => $routeOptions['framework'],
+                'middleware' => $routeOptions['middleware'],
+            ], static fn($value) => $value !== null && $value !== '');
+            $diagnostics = $router->diagnostics($filters);
+            $output->info('Route diagnostics');
+            if (!empty($filters)) {
+                $output->line('Filters: ' . json_encode($filters, JSON_UNESCAPED_SLASHES));
+            }
+            $output->line('Routes: ' . $diagnostics['route_count']);
+            $output->line('Named routes: ' . $diagnostics['named_route_count']);
+            $output->line('Cacheable routes: ' . $diagnostics['cacheable_route_count']);
+            $output->line('Fallback route: ' . ($diagnostics['fallback_route'] ? 'yes' : 'no'));
+            $output->newLine();
+            $rows = [];
+            foreach ($router->routeSummary($filters) as $route) {
+                $rows[] = [
+                    (string) $route['index'],
+                    $route['method'],
+                    $route['uri'],
+                    (string) ($route['name'] ?? ''),
+                    implode(',', (array) $route['middleware']),
+                    $route['cacheable'] ? 'yes' : 'no',
+                ];
+            }
+            $output->table(['#', 'Method', 'URI', 'Name', 'Middleware', 'Cache'], $rows);
+        } elseif ($command === 'route:export' || $routeVerb === 'export') {
+            require_once $projectRoot . '/vendor/autoload.php';
+            \Nemesis\Core\Config::load($projectRoot);
+            $router = require $projectRoot . '/routes/route.php';
+            $filters = array_filter([
+                'method' => $routeOptions['method'],
+                'framework' => $routeOptions['framework'],
+                'middleware' => $routeOptions['middleware'],
+            ], static fn($value) => $value !== null && $value !== '');
+            $file = $routeOptions['path'] ?: ($routePositionals[0] ?? null);
+            if ($file === null) {
+                $defaultExtension = in_array($routeOptions['format'], ['php', 'yaml'], true) ? $routeOptions['format'] : 'json';
+                $file = $projectRoot . '/storage/framework/routes.' . $defaultExtension;
+            }
+            $path = $router->exportRoutes($file, $routeOptions['format'], $filters);
+            echo "Routes exported to {$path}\n";
+        } elseif (($command === 'route:cache' && $routeVerb === '') || ($routeVerb === 'cache' && $routeAction === '')) {
+            require_once $projectRoot . '/vendor/autoload.php';
+            \Nemesis\Core\Config::load($projectRoot);
+            // Rebuild from route source rather than appending to a previous
+            // partial cache.
+            \Nemesis\Router\Router::clearCache();
+            $router = require $projectRoot . '/routes/route.php';
+            $router->warmCache();
+            echo "Routes cached successfully.\n";
+        }
+        break;
+
+    case 'api:format':
+    case 'api:format:examples':
+        require_once $projectRoot . '/vendor/autoload.php';
+        \Nemesis\Core\Config::load($projectRoot);
+
+        $args = array_slice($argv, 2);
+        $jsonMode = in_array('--json', $args, true);
+        $jsonPretty = true;
+        $includeSource = false;
+        $positionals = [];
+        foreach ($args as $arg) {
+            if ($arg === '--json') {
+                continue;
+            }
+
+            if ($arg === '--pretty') {
+                $jsonPretty = true;
+                continue;
+            }
+
+            if ($arg === '--brief') {
+                $jsonPretty = false;
+                continue;
+            }
+
+            if ($arg === '--source') {
+                $includeSource = true;
+                continue;
+            }
+
+            if ($arg !== '' && $arg[0] !== '-') {
+                $positionals[] = strtolower((string) $arg);
+            }
+        }
+
+        $state = $positionals[0] ?? 'status';
+            if (in_array($state, ['examples', 'example', 'matrix'], true) || $command === 'api:format:examples') {
+            if ($jsonMode) {
+                $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+                if ($jsonPretty) {
+                    $jsonFlags |= JSON_PRETTY_PRINT;
+                }
+                echo json_encode([
+                    'title' => 'API Format Examples',
+                    'examples' => $apiFormatExampleLines,
+                ], $jsonFlags) . PHP_EOL;
+                break;
+            }
+
+            echo "API Format Examples:\n";
+            foreach ($apiFormatExampleLines as $line) {
+                echo '  ' . $line . "\n";
+            }
+            break;
+        }
+
+        if (!in_array($state, ['status', 'show', 'get', 'current', 'on', 'off', 'pretty', 'brief', 'true', 'false', '1', '0', 'yes', 'no'], true)) {
+            fwrite(STDERR, "Usage: php nemesis api:format [status|on|off|pretty|brief|examples] [--json] [--pretty|--brief] [--source]\n");
+            exit(1);
+        }
+        $pretty = match ($state) {
+            'on', 'pretty', 'true', '1', 'yes' => true,
+            'off', 'brief', 'false', '0', 'no' => false,
+            default => null,
+        };
+
+        $configFile = $projectRoot . '/config/api.php';
+        $current = (bool) \config('api.pretty_json', \config('app.json_pretty', true));
+        $source = file_exists($configFile)
+            ? 'config/api.php'
+            : (getenv('APP_JSON_PRETTY') !== false ? 'env:APP_JSON_PRETTY' : 'config/app.php');
+
+        if ($pretty === null) {
+            if ($jsonMode) {
+                $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+                if ($jsonPretty) {
+                    $jsonFlags |= JSON_PRETTY_PRINT;
+                }
+                $payload = [
+                    'mode' => $current ? 'pretty' : 'brief',
+                    'pretty_json' => $current,
+                ];
+                if ($includeSource) {
+                    $payload['source'] = $source;
+                }
+                echo json_encode($payload, $jsonFlags) . PHP_EOL;
+            } else {
+                echo 'API JSON format: ' . ($current ? 'pretty' : 'brief') . PHP_EOL;
+            }
+            break;
+        }
+
+        $content = "<?php\n// Nemesis 7.1.0 | API formatting defaults | Updated: " . date('Y-m-d') . "\n\nreturn [\n    'pretty_json' => " . ($pretty ? 'true' : 'false') . ",\n];\n";
+        file_put_contents($configFile, $content);
+        echo 'API JSON format set to ' . ($pretty ? 'pretty' : 'brief') . ".\n";
+        break;
+
+    case 'config:cache':
+    case 'config':
+    case 'configs': // Support "configs cache clear"
+        if (($argv[2] ?? '') === 'cache' && ($argv[3] ?? '') === '') {
+            require_once $projectRoot . '/index.php';
+            \Nemesis\Core\Config::cache();
+            echo "Configuration cached successfully.\n";
+        } elseif (($argv[2] ?? '') === 'clear' || (($argv[2] ?? '') === 'cache' && ($argv[3] ?? '') === 'clear')) {
+            \Nemesis\Core\Config::clear();
+            echo "Configuration cache cleared.\n";
+        }
+        break;
+
+    case 'view:clear':
+    case 'views': // Support "views cache clear"
+        if (($argv[2] ?? '') === 'clear' || (($argv[2] ?? '') === 'cache' && ($argv[3] ?? '') === 'clear')) {
+            $dir = $projectRoot . '/storage/framework/views';
+            if (is_dir($dir)) {
+                $files = glob($dir . '/*');
+                foreach ($files as $file) {
+                    if (is_file($file)) unlink($file);
+                }
+            }
+            echo "View cache cleared.\n";
+        }
+        break;
+
+    case 'cache:clear':
+    case 'all': // Support "all cache clear"
+        if (($argv[2] ?? '') === 'clear' || (($argv[2] ?? '') === 'cache' && ($argv[3] ?? '') === 'clear')) {
+            \Nemesis\Router\Router::clear();
+            \Nemesis\Core\Config::clear();
+            // Clear views too
+            $dir = $projectRoot . '/storage/framework/views';
+            if (is_dir($dir)) {
+                $files = glob($dir . '/*');
+                foreach ($files as $file) {
+                    if (is_file($file)) unlink($file);
+                }
+            }
+            echo "All framework caches cleared.\n";
+        }
+        break;
+
+    case 'serve':
+        $host = 'localhost';
+        $port = 8000;
+        $docRoot = $projectRoot . DIRECTORY_SEPARATOR . 'public';
+
+        if (isset($argv[2])) {
+            [$host, $port] = explode(':', $argv[2]);
+        }
+
+        echo "Starting development server on http://$host:$port\n";
+        $docRoot = '"' . realpath($docRoot) . '"';
+        exec("php -S $host:$port -t $docRoot");
+        break;
+
+    case 'down':
+        $file = $projectRoot . '/storage/framework/down';
+        if (!is_dir(dirname($file))) mkdir(dirname($file), 0755, true);
+        file_put_contents($file, json_encode(['time' => date('Y-m-d H:i:s')]));
+        echo "Application is now in maintenance mode.\n";
+        break;
+
+    case 'up':
+        $file = $projectRoot . '/storage/framework/down';
+        if (file_exists($file)) unlink($file);
+        echo "Application is now live.\n";
+        break;
+
+    case 'debug:on':
+        updateEnv('APP_DEBUG', 'true');
+        echo "Application debug mode enabled.\n";
+        break;
+
+    case 'debug:off':
+        updateEnv('APP_DEBUG', 'false');
+        echo "Application debug mode disabled.\n";
+        break;
+
+    case 'storage:link':
+        $target = $projectRoot . '/storage/app/public';
+        $link = $projectRoot . '/public/storage';
+
+        if (!is_dir($target)) {
+            mkdir($target, 0755, true);
+        }
+
+        if (file_exists($link)) {
+            echo "The \"public/storage\" directory already exists.\n";
+            break;
+        }
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            // Windows symlink requires special permissions or developer mode
+            // We'll try symlink() first, but provide a manual command if it fails
+            if (@symlink($target, $link)) {
+                echo "The [public/storage] link has been connected to [$target].\n";
+            } else {
+                echo "❌ Failed to create symlink using PHP. Windows may require Administrator privileges.\n";
+                echo "🔧 Try running this manually in an ADMIN prompt:\n";
+                echo "   mklink /D \"$link\" \"$target\"\n";
+            }
+        } else {
+            if (symlink($target, $link)) {
+                echo "The [public/storage] link has been connected to [$target].\n";
+            } else {
+                echo "❌ Failed to create symlink.\n";
+            }
+        }
+        break;
+
+    case 'websocket:serve':
+        $port = $argv[2] ?? 8080;
+        $server = new \Nemesis\Broadcasting\WebSocketServer('127.0.0.1', $port);
+        $server->start();
+        break;
+
+    case 'key:generate':
+        $key = bin2hex(random_bytes(16));
+        updateEnv('APP_KEY', $key);
+        echo "Application key generated: $key\n";
+        break;
+
+    case 'tinker':
+        echo "Nemesis Tinker Shell (PHP " . PHP_VERSION . ")\n";
+        echo "Type 'exit' to quit.\n\n";
+        while (true) {
+            $input = readline("nemesis> ");
+            if ($input === 'exit') break;
+            if (empty($input)) continue;
+
+            readline_add_history($input);
+            try {
+                // Ensure context by using eval on the input
+                // Wrap in print just in case
+                if (!str_ends_with($input, ';')) $input .= ';';
+                ob_start();
+                eval($input);
+                $out = ob_get_clean();
+                if ($out) echo $out . "\n";
+            } catch (\Throwable $e) {
+                echo "Error: " . $e->getMessage() . "\n";
+            }
+        }
+        break;
+
+    case 'test':
+        echo "Running Framework Test Suite...\n";
+        $testCommand = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($projectRoot . '/tests/test_runner.php') . ' --suite=unit';
+        passthru($testCommand, $testExitCode);
+        if ($testExitCode !== 0) exit($testExitCode);
+        break;
+
+    case 'list':
+    case 'help':
+        echo "Nemesis Framework Available Commands:\n\n";
+        $cmds = [
+            'serve' => 'Start the development server',
+            'make:controller' => 'Create a new controller',
+            'make:model' => 'Create a new model [--connection=name]',
+            'make:middleware' => 'Create a new middleware',
+            'make:request' => 'Create a new form request',
+            'make:migration' => 'Create a new database migration',
+            'make:seeder' => 'Create a new database seeder',
+            'make:job' => 'Create a new background job class',
+            'make:mail' => 'Create a new Mailable class',
+            'make:policy' => 'Create a new authorization policy',
+            'make:event'       => 'Create a new event class',
+            'make:listener'    => 'Create a new event listener class',
+            'make:trait'       => 'Create a new trait',
+            'make:repository'  => 'Create a new repository class',
+            'make:entity'      => 'Create a new entity class',
+            'make:dto'         => 'Create a new DTO (readonly class)',
+            'make:transformer' => 'Create a new transformer class',
+            'make:manager'     => 'Create a new manager singleton',
+            'make:handler'     => 'Create a new handler class',
+            'make:interface'   => 'Create a new interface',
+            'make:factory'     => 'Create a new factory class',
+            'make:filter'      => 'Create a new query filter class',
+            'make:widget'      => 'Create a new widget (folder + class + view)',
+            'make:library'     => 'Create a new library class',
+            'make:helper'      => 'Create a new helper file',
+            'make:frontend'    => 'Create a starter bundle for a frontend framework [--framework=name]',
+            'make:plugin'      => 'Create a new plugin scaffold (v2 manifest)',
+            'make:module' => 'Create a new module structure',
+            'make:resource' => 'Create a full resource stack (Model, Controller, Migration, etc.)',
+            'make:auth' => 'Scaffold auth controllers (Login, Register, 2FA) + route hints',
+            'make:social-auth' => 'Scaffold social OAuth controller for a given driver (e.g. make:social-auth google)',
+            'schedule:run'      => 'Run all scheduled tasks that are due now (add to system cron: * * * * *)',
+            'schedule:list'     => 'List all registered scheduled tasks with their cron expressions',
+            'websocket:start'   => 'Start the WebSocket server [--host=127.0.0.1] [--port=6001]',
+            'migrate:run' => 'Run all pending migrations',
+            'migrate:rollback' => 'Rollback the last database migration',
+            'migrate:status' => 'Show the status of each database migration',
+            'db:seed' => 'Seed the database with records',
+            'db:list-connections' => 'List configured database connections [--json] [--pretty|--brief]',
+            'db:dump' => 'Export the database to a SQL file',
+            'db:truncate' => 'Truncate all database tables',
+            'db:restore' => 'Restore database from a SQL file',
+            'cache:clear' => 'Flush the application cache',
+            'route:cache' => 'Create a route cache file for faster routing',
+            'route:clear' => 'Clear the route cache file',
+            'route:list' => 'List registered routes and diagnostics',
+            'route:export' => 'Export route diagnostics to JSON, PHP, or YAML',
+            'route:diagnose' => 'Diagnose route matching for a URI and method [--json] [--pretty|--brief]',
+            'api:format' => 'Show or set API JSON formatting defaults [status|on|off] [--json] [--pretty|--brief] [--source]',
+            'api:format:examples' => 'Print the API JSON formatting matrix examples only',
+            'config:cache' => 'Create a configuration cache file',
+            'key:generate' => 'Set the APP_KEY in your .env file',
+            'auth:rotate' => 'Rotate application secrets',
+            'storage:link' => 'Link storage/app/public to public/storage',
+            'model:health' => 'Scan models for DB issues and N+1 risks',
+            'api:probe' => 'Proactive health check for all API routes',
+            'env:doctor' => 'Sanity check for the application environment',
+            'env' => 'Display the current application environment',
+            'tinker' => 'Interact with your application in an REPL shell',
+            'test' => 'Run the framework test suite',
+            'deadcode:find' => 'Find unused code and routes',
+            'app:mirror' => 'Start a read-only clone of the API',
+            'api:docs' => 'Generate interactive API documentation HTML',
+            'optimize' => 'Warm up all configuration and route caches',
+            'down' => 'Put the application into maintenance mode',
+            'up' => 'Bring the application out of maintenance mode',
+            'plugin:list' => 'List all discovered plugins',
+            'plugin:enable' => 'Enable a plugin',
+            'plugin:disable' => 'Disable a plugin',
+            'plugin:create' => 'Create a new plugin structure',
+            'frontend:list' => 'List supported frontend frameworks and scaffold roots [--json] [--pretty|--brief]',
+            'docs:sync' => 'Synchronize docs/ and public/docs/ [--dry-run] [--json] [--pretty|--brief]',
+            'data:sync' => 'Scaffold public/data packs and import Bangladesh locations [--bangladesh-source=...] [--json] [--pretty|--brief]',
+            'ip:list' => 'List IP allow/block rules [--json] [--pretty|--brief]',
+            'ip:allow' => 'Allow an IP, CIDR, or wildcard pattern',
+            'ip:block' => 'Block an IP, CIDR, or wildcard pattern',
+            'ip:unallow' => 'Remove an IP rule from the allow list',
+            'ip:unblock' => 'Remove an IP rule from the block list',
+            'ip:reset' => 'Reset IP rules back to allow-all defaults',
+            'syntax:check' => 'Lint PHP files with php -l [path|--all]',
+            'examples:list' => 'Browse the optional starter gallery',
+        ];
+        foreach ($cmds as $c => $d) {
+            echo "  " . str_pad($c, 20) . " $d\n";
+        }
+        echo "\nAPI Format Examples:\n";
+        foreach ($apiFormatExampleLines as $line) {
+            echo "  {$line}\n";
+        }
+        break;
+
+    case 'plugin:list':
+        echo "Nemesis Plugins:\n\n";
+        $manager = \Nemesis\Core\PluginManager::getInstance();
+        $manager->discover();
+        $plugins = $manager->getAll();
+
+        if (empty($plugins)) {
+            echo "No plugins found.\n";
+            break;
+        }
+
+        foreach ($plugins as $name => $plugin) {
+            $manifest = $plugin['manifest'];
+            $status = $manager->isActive($name) ? '✓ Active' : '✗ Disabled';
+            echo "  {$name} v{$manifest->getVersion()} - {$status}\n";
+            echo "    {$manifest->get('description', 'No description')}\n\n";
+        }
+        break;
+
+    case 'plugin:enable':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis plugin:enable {name}\n");
+
+        $manager = \Nemesis\Core\PluginManager::getInstance();
+        $manager->discover();
+
+        try {
+            $manager->enable($name);
+            echo "Plugin '{$name}' enabled successfully.\n";
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    case 'plugin:disable':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis plugin:disable {name}\n");
+
+        $manager = \Nemesis\Core\PluginManager::getInstance();
+        $manager->disable($name);
+        echo "Plugin '{$name}' disabled successfully.\n";
+        break;
+
+    case 'examples:list':
+        $catalog = loadExamplesCatalog($projectRoot);
+        if (empty($catalog)) {
+            echo "No example gallery found.\n";
+            break;
+        }
+
+        echo "Nemesis Examples Gallery:\n\n";
+        $grouped = [];
+        foreach ($catalog as $entry) {
+            $grouped[$entry['category']][] = $entry;
+        }
+
+        ksort($grouped);
+        foreach ($grouped as $category => $entries) {
+            echo strtoupper($category) . " EXAMPLES\n";
+            foreach ($entries as $entry) {
+                echo "  {$entry['name']} - {$entry['title']}\n";
+                echo "    {$entry['description']}\n";
+                echo "    Path: {$entry['path']}\n";
+            }
+            echo "\n";
+        }
+        break;
+
+    case 'docs:sync':
+        $json = in_array('--json', $argv, true);
+        $pretty = in_array('--pretty', $argv, true);
+        $brief = in_array('--brief', $argv, true);
+        $dryRun = in_array('--dry-run', $argv, true);
+        $roots = docsRoots();
+        $payload = syncDocsTrees($roots['docs'], $roots['public_docs'], $dryRun);
+        $payload['dry_run'] = $dryRun;
+        $payload['timestamp'] = date(DATE_ATOM);
+
+        if ($json) {
+            $flags = JSON_UNESCAPED_SLASHES;
+            if ($pretty && !$brief) {
+                $flags |= JSON_PRETTY_PRINT;
+            }
+            echo json_encode($payload, $flags) . "\n";
+            break;
+        }
+
+        echo "Docs sync summary:\n";
+        echo "  docs root:        {$payload['docs_root']}\n";
+        echo "  public docs root:  {$payload['public_docs_root']}\n";
+        echo "  changes:           {$payload['count']}\n";
+        echo "  mode:              " . ($dryRun ? 'dry-run' : 'sync') . "\n";
+        foreach ($payload['changes'] as $change) {
+            echo "  - {$change['path']} ({$change['direction']}, {$change['reason']})\n";
+        }
+        if ($payload['in_sync']) {
+            echo "  already in sync\n";
+        }
+        break;
+
+    case 'data:sync':
+        $json = in_array('--json', $argv, true);
+        $pretty = in_array('--pretty', $argv, true);
+        $brief = in_array('--brief', $argv, true);
+        $force = in_array('--force', $argv, true);
+        $bangladeshSource = defaultBangladeshSource();
+        foreach ($argv as $arg) {
+            if (str_starts_with($arg, '--bangladesh-source=')) {
+                $bangladeshSource = substr($arg, 20);
+            }
+        }
+
+        $root = dataRoot();
+        $catalog = baseDataCatalog();
+        $changes = [];
+
+        foreach ($catalog as $file => $data) {
+            $path = $root . '/' . $file;
+            $written = writeJsonFile($path, $data, $force);
+            if ($written) {
+                $changes[] = [
+                    'path' => $file,
+                    'status' => 'written',
+                ];
+            } elseif (file_exists($path)) {
+                $changes[] = [
+                    'path' => $file,
+                    'status' => 'skipped',
+                ];
+            }
+        }
+
+        $bangladeshPath = $root . '/bangladesh_locations.json';
+        $bangladeshWritten = importBangladeshLocations($bangladeshPath, $bangladeshSource, $force);
+        $changes[] = [
+            'path' => 'bangladesh_locations.json',
+            'status' => $bangladeshWritten ? 'imported' : 'skipped',
+            'source' => $bangladeshSource,
+        ];
+
+        $payload = [
+            'title' => 'Nemesis Public Data Packs',
+            'count' => count($changes),
+            'root' => $root,
+            'changes' => $changes,
+            'force' => $force,
+            'bangladesh_source' => $bangladeshSource,
+            'generated_at' => date(DATE_ATOM),
+        ];
+
+        if ($json) {
+            $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+            if ($pretty && !$brief) {
+                $flags |= JSON_PRETTY_PRINT;
+            }
+            echo json_encode($payload, $flags) . "\n";
+            break;
+        }
+
+        echo "Nemesis Public Data Packs:\n\n";
+        echo "  root: {$root}\n";
+        foreach ($changes as $change) {
+            $line = "  - {$change['path']} ({$change['status']})";
+            if (!empty($change['source'])) {
+                $line .= " source={$change['source']}";
+            }
+            echo $line . "\n";
+        }
+        break;
+
+    case 'ip:list':
+        $json = in_array('--json', $argv, true);
+        $pretty = in_array('--pretty', $argv, true);
+        $brief = in_array('--brief', $argv, true);
+        $payload = ipRulesPayload(loadIpRules());
+
+        if ($json) {
+            $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+            if ($pretty && !$brief) {
+                $flags |= JSON_PRETTY_PRINT;
+            }
+            echo json_encode($payload, $flags) . "\n";
+            break;
+        }
+
+        echo "Nemesis IP Access Rules:\n\n";
+        echo "  path: {$payload['ip_rules_path']}\n";
+        echo "  allow all: " . ($payload['allow_all'] ? 'yes' : 'no') . "\n";
+        echo "  allow count: {$payload['allow_count']}\n";
+        echo "  block count: {$payload['block_count']}\n";
+        echo "  trusted proxies: {$payload['trusted_proxy_count']}\n";
+        echo "  current ip: " . ($payload['rules']['ip'] ?? 'n/a') . "\n";
+        break;
+
+    case 'ip:allow':
+    case 'ip:block':
+    case 'ip:unallow':
+    case 'ip:unblock':
+    case 'ip:reset':
+        $json = in_array('--json', $argv, true);
+        $pretty = in_array('--pretty', $argv, true);
+        $brief = in_array('--brief', $argv, true);
+        $rule = $argv[2] ?? null;
+        $config = loadIpRules();
+        $policy = new \Nemesis\Support\IpAccess($config);
+
+        if ($command === 'ip:reset') {
+            $policy = $policy->reset();
+            saveIpRules($policy->getConfig());
+            $payload = ipRulesPayload($policy->getConfig());
+            if ($json) {
+                $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+                if ($pretty && !$brief) {
+                    $flags |= JSON_PRETTY_PRINT;
+                }
+                echo json_encode($payload, $flags) . "\n";
+            } else {
+                echo "IP rules reset to allow all.\n";
+            }
+            break;
+        }
+
+        if (!$rule) {
+            $usage = match ($command) {
+                'ip:allow' => "Usage: php nemesis ip:allow <ip|cidr|pattern>\n",
+                'ip:block' => "Usage: php nemesis ip:block <ip|cidr|pattern>\n",
+                'ip:unallow' => "Usage: php nemesis ip:unallow <ip|cidr|pattern>\n",
+                'ip:unblock' => "Usage: php nemesis ip:unblock <ip|cidr|pattern>\n",
+                default => "Usage: php nemesis {$command} <ip|cidr|pattern>\n",
+            };
+            die($usage);
+        }
+
+        if ($command === 'ip:allow') {
+            $policy = $policy->withRule('allow', $rule);
+        } elseif ($command === 'ip:block') {
+            $policy = $policy->withRule('block', $rule);
+        } elseif ($command === 'ip:unallow') {
+            $policy = $policy->withoutRule('allow', $rule);
+        } else {
+            $policy = $policy->withoutRule('block', $rule);
+        }
+
+        saveIpRules($policy->getConfig());
+        $payload = ipRulesPayload($policy->getConfig());
+        if ($json) {
+            $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+            if ($pretty && !$brief) {
+                $flags |= JSON_PRETTY_PRINT;
+            }
+            echo json_encode($payload, $flags) . "\n";
+        } else {
+            echo "IP rules updated.\n";
+        }
+        break;
+
+    case 'frontend:list':
+        $manager = loadFrontendCatalog();
+        $frameworks = $manager->supportedFrameworks();
+
+        $json = in_array('--json', $argv, true);
+        $pretty = in_array('--pretty', $argv, true);
+        $brief = in_array('--brief', $argv, true);
+
+        $payload = [
+            'title' => 'Nemesis Frontend Frameworks',
+            'count' => count($frameworks),
+            'frameworks' => array_map(static function (string $framework) use ($manager): array {
+                $config = $manager->frameworkConfig($framework);
+                return [
+                    'name' => $framework,
+                    'allowed' => $manager->isAllowed($framework),
+                    'enabled' => $manager->isEnabled($framework),
+                    'compiler' => $config['compiler'] ?? null,
+                    'views' => $config['views'] ?? null,
+                    'entry' => $config['entry'] ?? null,
+                    'build' => $config['build'] ?? null,
+                    'manifest' => $config['manifest'] ?? null,
+                    'middleware' => $config['middleware'] ?? null,
+                    'fallback' => (bool) ($config['fallback'] ?? false),
+                ];
+            }, $frameworks),
+        ];
+
+        if ($json) {
+            $flags = JSON_UNESCAPED_SLASHES;
+            if (!$brief || $pretty) {
+                $flags |= JSON_PRETTY_PRINT;
+            }
+            echo json_encode($payload, $flags) . "\n";
+            break;
+        }
+
+        echo "Nemesis Frontend Frameworks:\n\n";
+        foreach ($payload['frameworks'] as $item) {
+            echo "  {$item['name']}\n";
+            echo "    status:   " . ($item['allowed'] ? 'allowed' : 'blocked') . "\n";
+            echo "    compiler: " . ($item['compiler'] ?? 'unknown') . "\n";
+            echo "    views:    " . ($item['views'] ?? 'n/a') . "\n";
+            echo "    entry:    " . ($item['entry'] ?? 'n/a') . "\n";
+        }
+        break;
+
+    case 'plugin:create':
+        $name = $argv[2] ?? null;
+        if (!$name) die("Usage: php nemesis plugin:create {Name}\n");
+
+        $pluginDir = $projectRoot . "/plugins/{$name}";
+        if (is_dir($pluginDir)) die("Plugin [{$name}] already exists.\n");
+
+        mkdir($pluginDir, 0755, true);
+        mkdir("{$pluginDir}/src", 0755, true);
+        mkdir("{$pluginDir}/config", 0755, true);
+        mkdir("{$pluginDir}/migrations", 0755, true);
+
+        // plugin.json
+        $lowerName = strtolower($name);
+        $manifest = [
+            'name' => $lowerName,
+            'version' => '1.0.0',
+            'description' => "{$name} plugin for Nemesis framework",
+            'entry' => 'bootstrap.php',
+            'requires' => [
+                'php' => '>=8.0',
+                'nemesis' => '^1.0'
+            ],
+            'autoload' => [
+                'psr-4' => [
+                    "Nemesis\\Plugins\\{$name}\\" => 'src/'
+                ]
+            ],
+            'permissions' => ['routes', 'middleware', 'events']
+        ];
+        file_put_contents("{$pluginDir}/plugin.json", json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        // bootstrap.php
+        $bootstrap = "<?php\n\nuse Nemesis\\Core\\Plugin;\n\nPlugin::register('{$lowerName}', function(\$plugin) {\n    // Register routes\n    \$plugin->route('{$lowerName}', function() {\n        // Add your routes here\n    });\n    \n    // Register middleware\n    // \$plugin->middleware(YourMiddleware::class);\n    \n    // Register hooks\n    // Plugin::hook('app.boot', function() {\n    //     // Your hook logic\n    // });\n});\n";
+        file_put_contents("{$pluginDir}/bootstrap.php", $bootstrap);
+
+        // README.md
+        $readme = "# {$name} Plugin\n\n{$manifest['description']}\n\n## Installation\n\n```bash\nphp nemesis plugin:enable {$lowerName}\n```\n\n## Usage\n\nAdd your usage instructions here.\n";
+        file_put_contents("{$pluginDir}/README.md", $readme);
+
+        echo "Plugin [{$name}] created successfully at {$pluginDir}\n";
+        echo "Enable it with: php nemesis plugin:enable {$lowerName}\n";
+        break;
+
+    case 'env':
+        echo "Current Application Environment:\n";
+        echo "  APP_ENV:    " . (getenv('APP_ENV') ?: 'production') . "\n";
+        echo "  APP_DEBUG:  " . (getenv('APP_DEBUG') ?: 'false') . "\n";
+        echo "  APP_URL:    " . (getenv('APP_URL') ?: 'http://localhost') . "\n";
+        echo "  Config:     " . ($projectRoot . '/config/config.php') . "\n";
+        echo "  Platform:   " . PHP_OS_FAMILY . " (" . PHP_VERSION . ")\n";
+        break;
+
+    // =========================================================================
+    // Phase 10: Frontend / Asset Pipeline commands | Added: 2026-04-03
+    // =========================================================================
+
+    case 'vite:init':
+        // Scaffold Vite config + package.json into project root
+        $overwrite = in_array('--force', $argv, true);
+
+        $files = [
+            $projectRoot . '/vite.config.js'  => $projectRoot . '/src/Scaffolder/stubs/vite.config.stub',
+            $projectRoot . '/package.json'    => $projectRoot . '/src/Scaffolder/stubs/package.vite.stub',
+        ];
+
+        foreach ($files as $dest => $stub) {
+            $base = basename($dest);
+            if (file_exists($dest) && !$overwrite) {
+                echo "  [skip] {$base} already exists (use --force to overwrite)\n";
+                continue;
+            }
+            copy($stub, $dest);
+            echo "  [ok]   {$base} created\n";
+        }
+
+        // Ensure resources/ structure exists
+        foreach (['resources/js', 'resources/css', 'resources/images', 'storage/framework'] as $dir) {
+            if (!is_dir($projectRoot . '/' . $dir)) {
+                mkdir($projectRoot . '/' . $dir, 0755, true);
+            }
+        }
+
+        // Create resource entry points if missing
+        if (!file_exists($projectRoot . '/resources/js/app.js')) {
+            copy($projectRoot . '/src/Scaffolder/stubs/vite.config.stub', $projectRoot . '/resources/js/app.js');
+        }
+
+        // Write .env additions
+        $envFile = $projectRoot . '/.env';
+        if (file_exists($envFile)) {
+            $env = file_get_contents($envFile);
+            if (!str_contains($env, 'ASSET_DRIVER')) {
+                file_put_contents($envFile, $env . "\nASSET_DRIVER=vite\nVITE_DEV_URL=http://localhost:5173\n");
+                echo "  [ok]   .env updated with ASSET_DRIVER and VITE_DEV_URL\n";
+            }
+        }
+
+        echo "\nVite scaffolding complete!\n";
+        echo "Next steps:\n";
+        echo "  1.  npm install\n";
+        echo "  2.  npm run dev   (starts HMR dev server on :5173)\n";
+        echo "  3.  npm run build (production build to public/build/)\n";
+        echo "\nIn your layout template add:  <?= vite('resources/js/app.js') ?>\n";
+        break;
+
+    case 'webpack:init':
+        $overwrite = in_array('--force', $argv, true);
+
+        $files = [
+            $projectRoot . '/webpack.config.js' => $projectRoot . '/src/Scaffolder/stubs/webpack.config.stub',
+            $projectRoot . '/package.json'      => $projectRoot . '/src/Scaffolder/stubs/package.webpack.stub',
+        ];
+
+        foreach ($files as $dest => $stub) {
+            $base = basename($dest);
+            if (file_exists($dest) && !$overwrite) {
+                echo "  [skip] {$base} already exists (use --force to overwrite)\n";
+                continue;
+            }
+            copy($stub, $dest);
+            echo "  [ok]   {$base} created\n";
+        }
+
+        foreach (['resources/js', 'resources/css', 'resources/images'] as $dir) {
+            if (!is_dir($projectRoot . '/' . $dir)) {
+                mkdir($projectRoot . '/' . $dir, 0755, true);
+            }
+        }
+
+        $envFile = $projectRoot . '/.env';
+        if (file_exists($envFile)) {
+            $env = file_get_contents($envFile);
+            if (!str_contains($env, 'ASSET_DRIVER')) {
+                file_put_contents($envFile, $env . "\nASSET_DRIVER=webpack\nMIX_DEV_URL=http://localhost:8080\n");
+                echo "  [ok]   .env updated with ASSET_DRIVER\n";
+            }
+        }
+
+        echo "\nWebpack scaffolding complete!\n";
+        echo "Next steps:\n";
+        echo "  1.  npm install\n";
+        echo "  2.  npm run dev   (watch mode)\n";
+        echo "  3.  npm run build (production build to public/build/)\n";
+        echo "\nIn your template add:  <?= mix('/js/app.js') ?>\n";
+        break;
+
+    case 'asset:publish':
+        // Copy plugin/module asset directories into public/
+        $publicDir = $projectRoot . '/public';
+        $published  = 0;
+
+        // Scan plugins for an 'assets/' subdirectory
+        $pluginsDir = $projectRoot . '/plugins';
+        if (is_dir($pluginsDir)) {
+            foreach (scandir($pluginsDir) as $plugin) {
+                if ($plugin[0] === '.') continue;
+                $assetSrc = "{$pluginsDir}/{$plugin}/assets";
+                if (!is_dir($assetSrc)) continue;
+
+                $assetDest = "{$publicDir}/vendor/{$plugin}";
+                if (!is_dir($assetDest)) mkdir($assetDest, 0755, true);
+
+                $iter = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($assetSrc, \FilesystemIterator::SKIP_DOTS)
+                );
+                foreach ($iter as $file) {
+                    if (!$file->isFile()) continue;
+                    $rel  = substr($file->getPathname(), strlen($assetSrc) + 1);
+                    $dest = $assetDest . '/' . $rel;
+                    if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
+                    copy($file->getPathname(), $dest);
+                    $published++;
+                }
+                echo "  [ok] {$plugin} → public/vendor/{$plugin}\n";
+            }
+        }
+
+        echo "asset:publish complete. {$published} file(s) copied.\n";
+        break;
+
+    case 'frontend:install':
+        // Install a named frontend stack scaffold
+        $stack = $argv[2] ?? null;
+        $stacks = [
+            'alpine'    => 'Alpine.js — lightweight reactivity, no build step needed',
+            'angular'   => 'Angular — enterprise SPA framework',
+            'astro'     => 'Astro — content-focused web framework',
+            'ember'     => 'Ember — convention-heavy front-end framework',
+            'ghost'     => 'Ghost.js — owner\'s custom JS framework',
+            'htmx'      => 'htmx — hypermedia-driven interactions',
+            'inertia'   => 'Inertia.js — SPA adapter (Vue/React) without a full API',
+            'jquery'    => 'jQuery — universal DOM/AJAX library',
+            'lit'       => 'Lit — lightweight web components',
+            'livewire'  => 'Livewire — reactive PHP UI components',
+            'next'      => 'Next.js — React framework with routing and SSR',
+            'nuxt'      => 'Nuxt — Vue meta-framework with SSR and routing',
+            'preact'    => 'Preact — tiny React-compatible UI library',
+            'qwik'      => 'Qwik — resumable frontend framework',
+            'react'     => 'React — component-driven UI library',
+            'remix'     => 'Remix — React framework for nested routing',
+            'solid'     => 'SolidJS — fine-grained reactive UI framework',
+            'svelte'    => 'Svelte — compiler-first UI framework',
+            'sveltekit' => 'SvelteKit — app framework for Svelte',
+            'vue'       => 'Vue — progressive UI framework',
+        ];
+
+        if (!$stack || !isset($stacks[$stack])) {
+            echo "Usage: php nemesis frontend:install {stack}\n\n";
+            echo "Available stacks:\n";
+            foreach ($stacks as $name => $desc) {
+                echo "  {$name}  — {$desc}\n";
+            }
+            break;
+        }
+
+        // npm package names per stack
+        $packages = [
+            'alpine'    => ['alpinejs'],
+            'angular'   => ['@angular/core', '@angular/cli'],
+            'astro'     => ['astro'],
+            'ember'     => ['ember-source'],
+            'ghost'     => [],   // local — remind user to link manually
+            'htmx'      => ['htmx.org'],
+            'inertia'   => ['@inertiajs/core', '@inertiajs/vue3'],
+            'jquery'    => ['jquery'],
+            'lit'       => ['lit'],
+            'livewire'  => ['livewire'],
+            'next'      => ['next', 'react', 'react-dom'],
+            'nuxt'      => ['nuxt'],
+            'preact'    => ['preact'],
+            'qwik'      => ['@builder.io/qwik'],
+            'react'     => ['react', 'react-dom'],
+            'remix'     => ['@remix-run/react', '@remix-run/node'],
+            'solid'     => ['solid-js'],
+            'svelte'    => ['svelte'],
+            'sveltekit' => ['@sveltejs/kit', 'svelte'],
+            'vue'       => ['vue'],
+        ];
+
+        if ($stack === 'ghost') {
+            echo "Ghost.js is a local framework at D:\\Project Ghost.js\n";
+            echo "To link it, run:\n";
+            echo "  cd D:\\Project Ghost.js && npm link\n";
+            echo "  cd D:\\Project Nemesis  && npm link ghost.js\n";
+            echo "Then import it in resources/js/app.js:\n";
+            echo "  import Ghost from 'ghost.js';\n";
+            break;
+        }
+
+        $pkgs = implode(' ', $packages[$stack] ?? []);
+        if ($pkgs) {
+            echo "Installing {$stack}: npm install {$pkgs}\n";
+            passthru("npm install {$pkgs}");
+        }
+
+        // Write a bootstrap snippet into resources/js/
+        $bootstrapFile = $projectRoot . "/resources/js/bootstrap-{$stack}.js";
+        $snippets = [
+            'alpine' => "import Alpine from 'alpinejs';\nwindow.Alpine = Alpine;\nAlpine.start();\n",
+            'inertia' => "import { createApp, h } from 'vue';\nimport { createInertiaApp } from '@inertiajs/vue3';\ncreateInertiaApp({\n    resolve: name => import(`./Pages/\${name}.vue`),\n    setup({ el, App, props, plugin }) {\n        createApp({ render: () => h(App, props) }).use(plugin).mount(el);\n    },\n});\n",
+            'jquery'  => "import $ from 'jquery';\nwindow.$ = window.jQuery = $;\n",
+        ];
+        $bootstrap = $snippets[$stack] ?? "// {$stack} bootstrap placeholder\n// Add framework-specific setup here.\n";
+        file_put_contents($bootstrapFile, $bootstrap);
+        echo "  [ok]   resources/js/bootstrap-{$stack}.js created\n";
+        echo "  Add to your app.js:  import './bootstrap-{$stack}';\n";
+
+        echo "\n{$stack} installed. Run `npm run dev` to start.\n";
+        break;
+
+    case 'make:frontend':
+        $name = null;
+        $framework = null;
+        $manager = loadFrontendCatalog();
+
+        if (in_array('--help', $argv, true) || in_array('-h', $argv, true)) {
+            echo "Usage: php nemesis make:frontend <name> [--framework=name]\n";
+            echo "Create a beginner-friendly starter bundle for a frontend framework.\n\n";
+            echo "Examples:\n";
+            echo "  php nemesis make:frontend landing --framework=astro\n";
+            echo "  php nemesis make:frontend dashboard vue\n";
+            echo "  php nemesis frontend:list --json\n";
+            echo "\nUse php nemesis frontend:list to inspect supported framework names.\n";
+            break;
+        }
+
+        foreach ($argv as $index => $arg) {
+            if ($index < 2) {
+                continue;
+            }
+
+            if (str_starts_with($arg, '--framework=')) {
+                $framework = substr($arg, 12);
+                continue;
+            }
+
+            if ($arg === '--force') {
+                continue;
+            }
+
+            if ($framework === null && $name === null && $manager->supportsFramework($arg)) {
+                $framework = $arg;
+                continue;
+            }
+
+            if ($name === null) {
+                $name = $arg;
+            }
+        }
+
+        $name = $name ?? 'starter';
+        $framework = resolveFrontendFramework($framework ?? 'server');
+
+        try {
+            $scaffolder = new \Nemesis\Scaffolder\Scaffolder();
+            $paths = $scaffolder->generateFrontendStarter($framework, $name);
+            echo "Frontend starter scaffold created for {$framework}:\n";
+            foreach ($paths as $path) {
+                echo "  {$path}\n";
+            }
+        } catch (\RuntimeException $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    case 'syntax:check':
+        $target = null;
+        $all = in_array('--all', $argv, true);
+        foreach ($argv as $index => $arg) {
+            if ($index < 2) {
+                continue;
+            }
+            if ($arg === '--all') {
+                continue;
+            }
+            if ($target === null) {
+                $target = $arg;
+            }
+        }
+
+        $paths = $all
+            ? collectPhpFiles($projectRoot)
+            : collectPhpFiles($target ?? $projectRoot);
+
+        if (empty($paths)) {
+            echo "No PHP files found to check.\n";
+            break;
+        }
+
+        $failures = 0;
+        foreach ($paths as $path) {
+            [$code, $output] = runPhpLint($path);
+            if ($code === 0) {
+                echo "OK   {$path}\n";
+                continue;
+            }
+
+            $failures++;
+            echo "FAIL {$path}\n";
+            echo $output . "\n";
+        }
+
+        echo "\nSyntax check complete: " . (count($paths) - $failures) . " passed, {$failures} failed.\n";
+        if ($failures > 0) {
+            exit(1);
+        }
+        break;
+
+    // Phase 9: vendor:shrink — strips dev-only files from the vendor directory | 2026-04-03
+    case 'vendor:shrink':
+        $vendorDir = $projectRoot . '/vendor';
+        if (!is_dir($vendorDir)) {
+            echo "vendor/ directory not found. Run 'composer install' first.\n";
+            break;
+        }
+
+        // Patterns to remove (docs, tests, CI configs)
+        $removePatterns = [
+            'test', 'tests', 'Test', 'Tests',
+            'spec', 'specs', 'Spec', 'Specs',
+            'docs', 'doc', 'documentation', 'Documentation',
+            'examples', 'example', 'Example', 'Examples',
+            'demo', 'demos',
+            '.github', '.travis.yml', '.scrutinizer.yml',
+            'phpunit.xml', 'phpunit.xml.dist',
+            'phpcs.xml', 'phpcs.xml.dist',
+            '.editorconfig', '.gitattributes', '.gitignore',
+            'CHANGELOG.md', 'CHANGELOG', 'CHANGES.md',
+            'UPGRADE.md', 'UPGRADING.md',
+            'Makefile', 'Dockerfile',
+        ];
+
+        $removed = 0;
+        $bytes   = 0;
+
+        $iter = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($vendorDir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($iter as $file) {
+            $basename = $file->getBasename();
+            if (!in_array($basename, $removePatterns, true)) continue;
+
+            if ($file->isDir()) {
+                // Count directory size before removal
+                $dirIter = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($file->getPathname(), \FilesystemIterator::SKIP_DOTS)
+                );
+                foreach ($dirIter as $f) {
+                    if ($f->isFile()) $bytes += $f->getSize();
+                }
+                // Remove directory recursively
+                $dirFiles = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($file->getPathname(), \FilesystemIterator::SKIP_DOTS),
+                    \RecursiveIteratorIterator::CHILD_FIRST
+                );
+                foreach ($dirFiles as $df) {
+                    $df->isDir() ? rmdir($df->getPathname()) : unlink($df->getPathname());
+                }
+                @rmdir($file->getPathname());
+                $removed++;
+            } elseif ($file->isFile()) {
+                $bytes += $file->getSize();
+                unlink($file->getPathname());
+                $removed++;
+            }
+        }
+
+        $kb = round($bytes / 1024, 1);
+        echo "vendor:shrink complete. Removed {$removed} entries, freed ~{$kb} KB.\n";
+        echo "WARNING: Run 'composer dump-autoload' if autoloading breaks.\n";
+        break;
+
+    // Phase 21: tenant:create — provision a new tenant | 2026-04-06
+    case 'tenant:create':
+        $tenantName   = $argv[2] ?? null;
+        $tenantDomain = $argv[3] ?? '';
+        $tenantSlug   = $argv[4] ?? '';
+
+        if (!$tenantName) {
+            die("Usage: php nemesis tenant:create \"Tenant Name\" [domain] [slug]\n");
+        }
+
+        try {
+            $tenant = \Nemesis\Tenancy\TenantManager::create([
+                'name'   => $tenantName,
+                'domain' => $tenantDomain,
+                'slug'   => $tenantSlug ?: \Nemesis\Tenancy\TenantManager::slugify($tenantName),
+            ]);
+            echo "Tenant created:\n";
+            echo "  ID:     {$tenant->id}\n";
+            echo "  Name:   {$tenant->name}\n";
+            echo "  Slug:   {$tenant->slug}\n";
+            echo "  Domain: " . ($tenant->domain ?: '(none)') . "\n";
+            echo "  Active: " . ($tenant->active ? 'yes' : 'no') . "\n";
+        } catch (\Throwable $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    // Phase 21: tenant:list — display all tenants | 2026-04-06
+    case 'tenant:list':
+        try {
+            $tenants = \Nemesis\Tenancy\TenantManager::all();
+            if (empty($tenants)) {
+                echo "No tenants found.\n";
+                break;
+            }
+            printf("%-5s %-20s %-20s %-30s %-6s\n", 'ID', 'Name', 'Slug', 'Domain', 'Active');
+            echo str_repeat('-', 85) . "\n";
+            foreach ($tenants as $t) {
+                printf(
+                    "%-5s %-20s %-20s %-30s %-6s\n",
+                    $t->id,
+                    mb_strimwidth($t->name, 0, 19, '…'),
+                    mb_strimwidth($t->slug, 0, 19, '…'),
+                    mb_strimwidth($t->domain ?: '—', 0, 29, '…'),
+                    $t->active ? 'yes' : 'no'
+                );
+            }
+            echo "\nTotal: " . count($tenants) . " tenant(s)\n";
+        } catch (\Throwable $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    // Phase 21: tenant:activate / tenant:deactivate | 2026-04-06
+    case 'tenant:activate':
+    case 'tenant:deactivate':
+        $tenantId = isset($argv[2]) ? (int) $argv[2] : 0;
+        if (!$tenantId) die("Usage: php nemesis {$command} {id}\n");
+
+        try {
+            if ($command === 'tenant:activate') {
+                \Nemesis\Tenancy\TenantManager::activate($tenantId);
+                echo "Tenant #{$tenantId} activated.\n";
+            } else {
+                \Nemesis\Tenancy\TenantManager::deactivate($tenantId);
+                echo "Tenant #{$tenantId} deactivated.\n";
+            }
+        } catch (\Throwable $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    // Phase 21: tenant:delete — remove a tenant record | 2026-04-06
+    case 'tenant:delete':
+        $tenantId = isset($argv[2]) ? (int) $argv[2] : 0;
+        if (!$tenantId) die("Usage: php nemesis tenant:delete {id}\n");
+
+        echo "Are you sure you want to delete tenant #{$tenantId}? [y/N] ";
+        $confirm = strtolower(trim((string) fgets(STDIN)));
+        if ($confirm !== 'y') {
+            echo "Aborted.\n";
+            break;
+        }
+
+        try {
+            \Nemesis\Tenancy\TenantManager::delete($tenantId);
+            echo "Tenant #{$tenantId} deleted.\n";
+        } catch (\Throwable $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    // Phase 21: tenant:migrate — run migrations scoped to a tenant (DB-per-tenant) | 2026-04-06
+    case 'tenant:migrate':
+        $tenantSlug = $argv[2] ?? null;
+
+        try {
+            $tenants = $tenantSlug
+                ? array_filter(
+                    \Nemesis\Tenancy\TenantManager::all(),
+                    fn($t) => $t->slug === $tenantSlug
+                )
+                : \Nemesis\Tenancy\TenantManager::all();
+
+            if (empty($tenants)) {
+                echo $tenantSlug ? "Tenant '{$tenantSlug}' not found.\n" : "No tenants found.\n";
+                break;
+            }
+
+            foreach ($tenants as $tenant) {
+                echo "Migrating tenant: {$tenant->name} ({$tenant->slug})...\n";
+
+                // For DB-per-tenant strategy, switch connection first.
+                $strategy = getenv('TENANCY_STRATEGY') ?: 'shared_database';
+                if ($strategy === 'database_per_tenant') {
+                    \Nemesis\Tenancy\TenantManager::switchConnection($tenant);
+                } else {
+                    \Nemesis\Tenancy\TenantManager::setCurrent($tenant);
+                }
+
+                // Run the app's migration runner if available.
+                $migratorClass = '\Nemesis\Database\Migrator';
+                if (class_exists($migratorClass)) {
+                    $migrator = new $migratorClass(\Nemesis\Core\Database::getPdo());
+                    $migrator->run($projectRoot . '/database/migrations');
+                    echo "  [ok] Migrations applied for {$tenant->slug}.\n";
+                } else {
+                    echo "  [skip] No Migrator class found — implement Nemesis\\Database\\Migrator.\n";
+                }
+            }
+        } catch (\Throwable $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    // Phase 21: tenant:seed — run seeders for tenant(s) | 2026-04-06
+    case 'tenant:seed':
+        $tenantSlug  = $argv[2] ?? null;
+        $seederClass = $argv[3] ?? 'DatabaseSeeder';
+
+        try {
+            $tenants = $tenantSlug
+                ? array_filter(
+                    \Nemesis\Tenancy\TenantManager::all(),
+                    fn($t) => $t->slug === $tenantSlug
+                )
+                : \Nemesis\Tenancy\TenantManager::all();
+
+            if (empty($tenants)) {
+                echo $tenantSlug ? "Tenant '{$tenantSlug}' not found.\n" : "No tenants found.\n";
+                break;
+            }
+
+            foreach ($tenants as $tenant) {
+                echo "Seeding tenant: {$tenant->name} ({$tenant->slug})...\n";
+
+                $strategy = getenv('TENANCY_STRATEGY') ?: 'shared_database';
+                if ($strategy === 'database_per_tenant') {
+                    \Nemesis\Tenancy\TenantManager::switchConnection($tenant);
+                } else {
+                    \Nemesis\Tenancy\TenantManager::setCurrent($tenant);
+                }
+
+                $fqcn = "\\App\\Database\\Seeders\\{$seederClass}";
+                if (!class_exists($fqcn)) {
+                    echo "  [skip] Seeder class {$fqcn} not found.\n";
+                    continue;
+                }
+                (new $fqcn())->run();
+                echo "  [ok] Seeded {$tenant->slug} with {$seederClass}.\n";
+            }
+        } catch (\Throwable $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+        break;
+
+    default:
+        // v7.1.1 (Gap 12): consult the new CommandRegistry first. Plugins and
+        // apps can register commands via \Nemesis\Console\CommandRegistry::getInstance()
+        // and they will be picked up here before falling back to the legacy
+        // CommandBus / plugin-command paths.
+        $registry = \Nemesis\Console\CommandRegistry::getInstance();
+
+        // New in v7.1.1: `php nemesis list` shows all registered commands.
+        if ($command === 'list' || $command === 'commands') {
+            echo "Nemesis Framework CLI — registered commands:\n\n";
+            foreach ($registry->list() as $name => $description) {
+                echo sprintf("  %-32s %s\n", $name, $description);
+            }
+            if ($registry->list() === []) {
+                echo "  (no commands registered yet)\n";
+            }
+            echo "\nRun `php nemesis help <command>` for details on a specific command.\n";
+            exit(0);
+        }
+
+        if ($command === 'help' || $command === '--help' || $command === '-h') {
+            $target = $argv[2] ?? null;
+            if ($target === null) {
+                echo "Usage: php nemesis help <command>\n";
+                exit(0);
+            }
+            $info = $registry->help($target);
+            if ($info === null) {
+                echo "No help available for '{$target}'.\n";
+                exit(1);
+            }
+            echo "{$target} — {$info['description']}\n\n";
+            echo "Usage:\n  {$info['usage']}\n";
+            exit(0);
+        }
+
+        if ($registry->has($command)) {
+            require_once $projectRoot . '/index.php';
+            exit($registry->run($command, $argv));
+        }
+
+        // Phase 7: try CommandBus first (app/Console/Commands + plugin commands) | 2026-04-03
+        $bus = \Nemesis\Reactor\CommandBus::getInstance();
+
+        // Auto-discover app commands
+        $customCommandDir = $projectRoot . '/app/Console/Commands';
+        if (is_dir($customCommandDir)) {
+            $bus->discoverIn($customCommandDir);
+        }
+
+        // Auto-discover plugin commands (plugins already loaded by PluginManager)
+        if ($bus->has($command)) {
+            require_once $projectRoot . '/index.php';
+            exit($bus->dispatch($argv));
+        }
+
+        // Legacy fallback: plugin string-based commands
+        $manager = \Nemesis\Core\PluginManager::getInstance();
+        $manager->discover();
+        $pluginCommands = \Nemesis\Core\Plugin::getCommands();
+        foreach ($pluginCommands as $cmdClass) {
+            $cmd = new $cmdClass();
+            $sig = method_exists($cmd, 'getSignature') ? $cmd->getSignature() : ($cmd->signature ?? null);
+            if ($sig === $command) {
+                require_once $projectRoot . '/index.php';
+                if (method_exists($cmd, 'run')) {
+                    exit($cmd->run(new \Nemesis\Console\Input($argv), new \Nemesis\Console\Output()));
+                }
+                // Very old commands: handle($args)
+                $cmd->handle(array_slice($argv, 2));
+                exit(0);
+            }
+        }
+
+        echo "Nemesis Framework CLI\n";
+        echo "Usage:\n";
+        echo "  php nemesis serve [host:port]\n";
+        echo "  php nemesis make:controller Name\n";
+        echo "  php nemesis make:model Name\n";
+        echo "  php nemesis make:middleware Name\n";
+        echo "  php nemesis make:request Name\n";
+        break;
+}
+
+function updateEnv($key, $value) {
+    global $projectRoot;
+    $path = $projectRoot . '/.env';
+    if (!file_exists($path)) return;
+
+    $content = file_get_contents($path);
+    if (strpos($content, "{$key}=") !== false) {
+        $content = preg_replace("/^{$key}=.*/m", "{$key}={$value}", $content);
+    } else {
+        $content .= "\n{$key}={$value}";
+    }
+    file_put_contents($path, $content);
+}

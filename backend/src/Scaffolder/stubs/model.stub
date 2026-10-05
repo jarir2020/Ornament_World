@@ -1,0 +1,22 @@
+<?php
+declare(strict_types=1);
+
+namespace {{Namespace}};
+
+use Nemesis\Core\Model;
+
+class {{ClassName}} extends Model
+{
+    protected $table = '{{TableName}}';
+
+    /**
+     * Mass-assignable attributes.
+     */
+    protected $fillable = [];
+{{ConnectionProperty}}
+
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+    }
+}

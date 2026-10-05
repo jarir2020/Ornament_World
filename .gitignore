@@ -24,6 +24,13 @@ storage/logs/
 *.db
 *.log
 
+# Nemesis runtime state and generated test artifacts
+backend/storage/*
+!backend/storage/.gitkeep
+!backend/storage/framework/.gitkeep
+!backend/storage/session/.gitkeep
+!backend/storage/views/.gitkeep
+
 # Local editor and operating-system files
 .DS_Store
 Thumbs.db

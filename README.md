@@ -20,24 +20,31 @@ The guiding principle is **Luxury look, simple shopping.**
 
 ## Status
 
-This repository currently contains the approved project plan and publication documentation. Application implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
+The repository now contains the approved project plan, Phase 0 discovery report, and the initial Nemesis-integrated Svelte foundation. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
 
 ## Documentation
 
 - [Final implementation plan](plan-final.md)
 - [Original requirements](plan.md)
+- [Phase 0 discovery report](phase-0-discovery.md)
 - [Agent and contributor guidance](AGENTS.md)
 - [LLM project context](llms.txt)
+
+## Repository layout
+
+- `backend/` — Nemesis application, integrated Svelte/Vite/Tailwind assets, Composer dependencies, migrations, and data packs.
+- `backend/database/data/bangladesh_locations.json` — supplied Bangladesh district/subdistrict/post-office dataset.
 
 ## Planned stack
 
 - Backend: `jarir/nemesis-framework`
-- Frontend: SvelteKit
-- CSS: Tailwind CSS
+- Frontend: Svelte inside Nemesis
+- CSS/build: Tailwind CSS + Vite
+- Database: MySQL
 - Initial currency: BDT
 - Initial market: Bangladesh
 
-Svelte props will be used for parent-to-child component data flow. Secure backend communication, persistence, order validation, and Pathao integration will use the backend boundary and SvelteKit server-side loading/form actions where appropriate.
+Svelte props will be used for parent-to-child component data flow. Nemesis controllers will provide page data to the integrated Svelte views; JSON endpoints are reserved for asynchronous actions, webhooks, and external integrations.
 
 ## Planned first-release capabilities
 
@@ -52,7 +59,25 @@ Svelte props will be used for parent-to-child component data flow. Secure backen
 
 ## Development
 
-Implementation setup and commands will be documented when the backend and frontend projects are created. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
+The initial Nemesis and integrated Svelte foundations are now created. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
+
+Backend setup:
+
+```bash
+cd backend
+composer install
+php bin/nemesis migrate:status
+```
+
+Integrated Svelte/Vite setup:
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+Local credentials belong in the ignored `backend/.env`; never commit them. The tracked `backend/.env.example` contains only safe configuration placeholders.
 
 ## License
 

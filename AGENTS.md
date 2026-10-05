@@ -8,14 +8,15 @@ The authoritative implementation direction is in [plan-final.md](plan-final.md).
 
 ## Current repository state
 
-This repository currently contains the approved planning documents and project metadata. The application has not yet been implemented. Do not imply that storefront, checkout, admin, or Pathao functionality exists until it is actually built and verified.
+The repository now contains the approved planning documents plus the initial Nemesis foundation and integrated Svelte/Tailwind asset pipeline inside `backend/`. Storefront, checkout, admin, and Pathao business functionality are not implemented yet; do not imply that those features exist until they are built and verified.
 
 ## Technology direction
 
 - Backend: `jarir/nemesis-framework` created through Composer.
-- Frontend: SvelteKit.
-- Styling: Tailwind CSS.
-- Backend/frontend boundary: versioned backend JSON endpoints and/or secure SvelteKit server-side load/form actions as appropriate.
+- Frontend: Svelte components inside Nemesis `resources/js/svelte` and `resources/views/svelte`.
+- Styling/build: Tailwind CSS through the Nemesis Vite pipeline.
+- Database: MySQL for the current local foundation and planned production direction.
+- Data flow: Nemesis controller/view props by default; JSON endpoints only for asynchronous actions, webhooks, or external integrations that need them.
 - Component communication: use Svelte props for parent-to-child data flow; props do not replace secure backend persistence or external-service communication.
 - Initial market/currency: Bangladesh / BDT.
 
@@ -33,6 +34,7 @@ This repository currently contains the approved planning documents and project m
 10. Never commit credentials, `.env` files, tokens, private customer data, generated dependencies, or local tool state.
 11. Add focused tests for pricing, validation, delivery rules, stock, status transitions, fraud signals, and Pathao retry/idempotency behavior.
 12. Explain important non-obvious behavior with concise comments and update the relevant guides or README when workflow changes.
+13. Keep the supplied Bangladesh location source at `backend/database/data/bangladesh_locations.json` traceable to its public source and validate its import before using it for checkout.
 
 ## Validation and handoff
 

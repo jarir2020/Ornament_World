@@ -1,0 +1,70 @@
+{
+    "name": "jarir/nemesis-framework",
+    "description": "Nemesis: A High-Performance PHP Framework for SaaS and APIs.",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "phpmailer/phpmailer": "^6.8",
+        "league/flysystem": "^3.31",
+        "league/flysystem-aws-s3-v3": "^3.31",
+        "aws/aws-sdk-php": "^3.372.0",
+        "zircote/swagger-php": "^6.0",
+        "jarir-ahmed/auth-token-maker": "^1.0",
+        "jarir-ahmed/cache": "^1.0",
+        "jarir-ahmed/data-encryption-utility": "^1.0",
+        "jarir-ahmed/file": "^1.0",
+        "jarir-ahmed/form-generator": "^1.0",
+        "jarir-ahmed/hash-helper": "^1.0",
+        "jarir-ahmed/http-response": "^1.0",
+        "jarir-ahmed/message-broker": "^1.0",
+        "jarir-ahmed/notification-system": "^1.0",
+        "jarir-ahmed/password-generator": "^1.0",
+        "jarir-ahmed/php-llm": "^1.0",
+        "jarir-ahmed/registration-data-checker": "^1.0",
+        "jarir-ahmed/search": "^1.0",
+        "jarir-ahmed/server-stats": "^1.0",
+        "jarir-ahmed/time-helper": "^1.0",
+        "jarir-ahmed/uncensored-search": "^1.0",
+        "jarir-ahmed/universal-cors": "^1.0",
+        "jarir-ahmed/universal-spa": "^1.0",
+        "jarir-ahmed/user-info-capture": "^1.0",
+        "jarir-ahmed/auth-microservice": "dev-main@dev"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Nemesis\\": "src/",
+            "Nemesis\\Contracts\\": "src/Contracts/",
+            "Nemesis\\Exceptions\\": "src/Exceptions/",
+            "Nemesis\\Attributes\\": "src/Attributes/",
+            "App\\": "app/"
+        },
+        "files": [
+            "src/Helpers/Helpers.php"
+        ]
+    },
+    "authors": [
+        {
+            "name": "Jarir Ahmed",
+            "email": "jarircse16@gmail.com"
+        }
+    ],
+    "keywords": [
+        "framework",
+        "php",
+        "orm",
+        "mvc",
+        "api"
+    ],
+    "homepage": "https://github.com/jarir2020/jarir-nemesis",
+    "bin": ["bin/nemesis"],
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "scripts": {
+        "post-create-project-cmd": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+            "@php bin/nemesis key:generate",
+            "@php -r \"echo PHP_EOL . '✓ Nemesis project ready! Edit .env then run: php nemesis serve' . PHP_EOL;\""
+        ]
+    }
+}
