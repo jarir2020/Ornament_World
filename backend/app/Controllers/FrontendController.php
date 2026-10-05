@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Services\CatalogService;
 use Nemesis\Core\Controller;
 use Nemesis\Http\Request;
 
@@ -35,7 +36,27 @@ class FrontendController extends Controller
 
     public function storefront(Request $request): void
     {
-        $this->render('home', $this->pageData($request, 'svelte'));
+        $category = trim((string) $request->query('category', ''));
+        $search = trim((string) $request->query('search', ''));
+        $catalog = (new CatalogService())->storefront($category, $search);
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps'] = array_merge($data['pageProps'], $catalog);
+
+        $this->render('home', $data);
+    }
+
+    public function product(Request $request, string $slug): void
+    {
+        $product = (new CatalogService())->productBySlug($slug);
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['product'] = $product;
+        $data['pageProps']['notFound'] = $product === null;
+
+        if ($product === null) {
+            http_response_code(404);
+        }
+
+        $this->render('home', $data);
     }
 
     public function preview(Request $request, string $framework = 'server'): void
@@ -63,7 +84,9 @@ class FrontendController extends Controller
                 'eyebrow' => 'Quiet luxury, made for every day',
                 'headline' => 'Details that make the moment.',
                 'intro' => 'Discover considered men’s jewellery designed to feel personal, lasting, and unmistakably yours.',
-                'categories' => ['Bracelets', 'Chains', 'Rings', 'Lockets'],
+                'categories' => [],
+                'products' => [],
+                'filters' => ['category' => '', 'search' => ''],
                 'cartCount' => 0,
                 'isAuthenticated' => !empty($auth),
                 'authRole' => $auth['role'] ?? null,

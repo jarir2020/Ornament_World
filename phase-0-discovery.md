@@ -105,3 +105,7 @@ The first Phase 1 foundation slice is now implemented inside `backend/`:
 - Local smoke tests passed for the storefront response, root redirect, built Vite assets, health endpoint, and unauthenticated admin rejection.
 
 Phase 1 remains in progress until the setup/CI contract and the complete admin authentication flow are documented and verified.
+
+## Phase 2 started locally
+
+The first catalog slice is now implemented inside `backend/`; see [phase-2-catalog.md](phase-2-catalog.md) for the scoped details and evidence. Phase 2 is in progress, not complete.

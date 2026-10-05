@@ -42,6 +42,7 @@ $router->frontendGroup('vue', 'layouts.app', function (Router $router) use ($fro
 
 $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/storefront', [$frontendController, 'storefront'], ['web'])->name('storefront.home');
+    $router->add('GET', '/storefront/product/{slug}', [$frontendController, 'product'], ['web'])->name('storefront.product');
 }, ['middleware' => 'web']);
 
 $router->frontendGroup('server', 'layouts.app', function (Router $router) use ($frontendController, $userController): void {

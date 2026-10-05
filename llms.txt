@@ -4,7 +4,7 @@
 
 Ornament World is a planned premium men's jewellery e-commerce platform for the Bangladesh market. Its product principle is: "Luxury look, simple shopping."
 
-The repository now contains the initial Nemesis application and integrated Svelte/Vite/Tailwind foundation. Product, checkout, admin, and Pathao business features are not complete yet.
+The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, and an in-progress Phase 2 catalog read path. Checkout, admin catalog CRUD, and Pathao business features are not complete yet.
 
 ## Source of truth
 

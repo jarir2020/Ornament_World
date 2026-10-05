@@ -20,13 +20,15 @@ The guiding principle is **Luxury look, simple shopping.**
 
 ## Status
 
-The repository now contains the approved project plan, Phase 0 discovery report, and the initial Nemesis-integrated Svelte foundation. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
+The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, and the first Phase 2 catalog slice. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
 
 ## Documentation
 
 - [Final implementation plan](plan-final.md)
 - [Original requirements](plan.md)
 - [Phase 0 discovery report](phase-0-discovery.md)
+- [Phase 2 catalog progress](phase-2-catalog.md)
+- [Framework fixes](Framework_Fixes.md)
 - [Agent and contributor guidance](AGENTS.md)
 - [LLM project context](llms.txt)
 
@@ -34,6 +36,8 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 
 - `backend/` — Nemesis application, integrated Svelte/Vite/Tailwind assets, Composer dependencies, migrations, and data packs.
 - `backend/database/data/bangladesh_locations.json` — supplied Bangladesh district/subdistrict/post-office dataset.
+- `backend/database/migrations/2026_10_06_000000_create_catalog_tables.php` — Phase 2 catalog schema.
+- `backend/database/seeders/CatalogSeeder.php` — repeatable local demo catalog seed.
 
 ## Planned stack
 
@@ -59,7 +63,7 @@ Svelte props will be used for parent-to-child component data flow. Nemesis contr
 
 ## Development
 
-The initial Nemesis and integrated Svelte foundations are now created. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
+The initial Nemesis and integrated Svelte foundations are now created, and the Phase 2 catalog read path is in progress. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
 
 Backend setup:
 
@@ -67,6 +71,7 @@ Backend setup:
 cd backend
 composer install
 php bin/nemesis migrate:status
+php bin/nemesis db:seed CatalogSeeder
 ```
 
 Integrated Svelte/Vite setup:
@@ -74,7 +79,8 @@ Integrated Svelte/Vite setup:
 ```bash
 cd backend
 npm install
-npm run dev
+npm run build
+php bin/nemesis serve 127.0.0.1:8098
 ```
 
 Local credentials belong in the ignored `backend/.env`; never commit them. The tracked `backend/.env.example` contains only safe configuration placeholders.

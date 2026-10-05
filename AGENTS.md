@@ -8,7 +8,7 @@ The authoritative implementation direction is in [plan-final.md](plan-final.md).
 
 ## Current repository state
 
-The repository now contains the approved planning documents plus the initial Nemesis foundation and integrated Svelte/Tailwind asset pipeline inside `backend/`. Storefront, checkout, admin, and Pathao business functionality are not implemented yet; do not imply that those features exist until they are built and verified.
+The repository now contains the approved planning documents, the initial Nemesis foundation, and an in-progress Phase 2 catalog read path inside `backend/`. The catalog schema, local demo catalog, storefront listing/filtering, and product detail route are implemented and verified locally. Checkout, admin catalog CRUD, and Pathao business functionality are not complete; do not imply that those features exist until they are built and verified.
 
 ## Technology direction
 
