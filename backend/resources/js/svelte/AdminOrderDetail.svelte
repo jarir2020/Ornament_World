@@ -1,4 +1,6 @@
 <script>
+    import AdminSidebar from './AdminSidebar.svelte';
+
     export let order = null;
     export let csrfToken = '';
 
@@ -126,7 +128,10 @@
 
 {#if order}
     <main class="min-h-screen bg-[#080808] px-6 py-10 text-stone-100 sm:px-10 lg:px-12">
-        <div class="mx-auto max-w-7xl">
+        <div class="mx-auto max-w-[90rem]">
+            <div class="grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
+                <AdminSidebar active="orders" />
+                <div class="min-w-0">
             <a class="text-sm text-amber-300 transition hover:text-amber-100" href="/admin">← Back to order queue</a>
             <div class="mt-7 flex flex-col justify-between gap-5 border-b border-white/10 pb-7 sm:flex-row sm:items-end">
                 <div><p class="text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">Protected order detail</p><h1 class="mt-3 text-4xl font-semibold text-white">{order.reference}</h1><p class="mt-2 text-sm text-stone-500">Placed {order.createdAt}</p></div>
@@ -203,6 +208,8 @@
             <div class="mt-6 grid gap-6 lg:grid-cols-2">
                 <section class="rounded-2xl border border-white/10 bg-white/[0.04] p-6"><h2 class="font-medium text-white">Status history</h2><div class="mt-5 space-y-4">{#each order.history as entry}<div class="border-l border-amber-200/40 pl-4"><p class="text-sm text-white">{entry.toStatus.replaceAll('_', ' ')}</p>{#if entry.note}<p class="mt-1 text-sm leading-6 text-stone-400">{entry.note}</p>{/if}<p class="mt-1 text-xs text-stone-600">{entry.createdAt}</p></div>{/each}</div></section>
                 <section class="rounded-2xl border border-white/10 bg-white/[0.04] p-6"><h2 class="font-medium text-white">Previous orders for this phone</h2>{#if order.previousOrders?.length}<div class="mt-5 space-y-3">{#each order.previousOrders as previous}<a class="flex items-center justify-between rounded-xl border border-white/10 px-4 py-3 text-sm hover:border-amber-200/50" href={`/admin/orders/${previous.reference}`}><span class="text-amber-200">{previous.reference}</span><span class="text-stone-400">{previous.status.replaceAll('_', ' ')} · {formatPrice(previous.total)}</span></a>{/each}</div>{:else}<p class="mt-4 text-sm text-stone-500">No previous orders found for this phone.</p>{/if}</section>
+            </div>
+                </div>
             </div>
         </div>
     </main>

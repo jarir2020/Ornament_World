@@ -7,6 +7,7 @@ vendor/
 .env.*
 !.env.example
 !.env.sample
+credentials.txt
 *.key
 *.pem
 
