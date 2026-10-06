@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Services\CatalogService;
+use App\Services\CatalogAdminService;
 use Nemesis\Core\Controller;
 use Nemesis\Http\Request;
 
@@ -16,7 +17,11 @@ class FrontendController extends Controller
 
     public function admin(Request $request): void
     {
-        $this->render('admin/dashboard', $this->pageData($request));
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['admin'] = (new CatalogAdminService())->snapshot();
+        $data['pageProps']['admin']['csrfToken'] = function_exists('csrf_token') ? csrf_token() : '';
+
+        $this->render('admin', $data);
     }
 
     public function profile(Request $request): void

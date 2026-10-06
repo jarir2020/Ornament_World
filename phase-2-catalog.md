@@ -1,7 +1,7 @@
 # Phase 2 — Catalog and Storefront Progress
 
 **Date:** 2026-10-06
-**Status:** In progress — catalog read path verified locally; admin catalog management and full image workflow remain.
+**Status:** In progress — catalog read path and the first protected admin management slice are verified locally; full edit/image workflow remains.
 
 ## Implemented slice
 
@@ -16,6 +16,9 @@
 - Added server-side category and search filtering on `/storefront`.
 - Added server-rendered product props and `/storefront/product/{slug}` detail pages.
 - Added product variant display, stock state, discount presentation, image-gallery support, and empty/not-found states in the integrated Svelte application.
+- Added a protected Svelte admin catalog screen at `/admin`.
+- Added protected admin actions for creating categories/products and activating/deactivating products. Product deactivation is soft and reversible.
+- Added backend validation for names, slugs, category ownership, prices, stock, and default variants.
 
 Normal catalog page data is provided through Nemesis controller/view props. No separate frontend application or catalog API is required for this read path.
 
@@ -31,10 +34,14 @@ Normal catalog page data is provided through Nemesis controller/view props. No s
 - `/storefront/product/onyx-signet-ring` returned HTTP 200.
 - An unknown product slug returned HTTP 404.
 - `/_health` returned HTTP 200 with database health `ok`.
+- `/admin` returned HTTP 401 without an admin bearer token.
+- `POST /admin/catalog/products` returned HTTP 401 without an admin bearer token.
+- The public `/storefront` remained HTTP 200 after admin route changes.
 
 ## Remaining Phase 2 work
 
-- Build protected admin catalog CRUD for categories, products, variants, prices, discounts, stock, and active state.
+- Complete protected admin catalog CRUD UI for editing existing products, variants, prices, discounts, stock, and active state.
 - Add an approved image upload/storage workflow and verify responsive galleries with real project assets.
+- Complete the browser admin authentication/session flow so authorized staff can use the screen without manually managing bearer headers.
 - Add focused catalog tests for filtering, price/discount presentation, active state, and stock display.
 - Complete the Phase 2 exit criterion: an admin can manage an active catalog and customers can browse it on mobile and desktop.

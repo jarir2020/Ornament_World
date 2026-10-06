@@ -20,7 +20,7 @@ The guiding principle is **Luxury look, simple shopping.**
 
 ## Status
 
-The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, and the first Phase 2 catalog slice. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
+The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, and the in-progress Phase 2 catalog/admin slice. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
 
 ## Documentation
 

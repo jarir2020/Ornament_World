@@ -7,6 +7,7 @@ use Nemesis\Helpers\Helpers;
 use App\Controllers\EmailController;
 use App\Controllers\ApplicationsController;
 use App\Controllers\TestController;
+use App\Controllers\CatalogAdminController;
 
 // Instantiate the router
 $router = isset($container) ? $container->make(\Nemesis\Router\Router::class) : new Router();
@@ -29,6 +30,7 @@ $userController = new UserController();
 $emailController = new EmailController();
 $applicationsController = new ApplicationsController();
 $frontendController = new FrontendController();
+$catalogAdminController = new CatalogAdminController();
 
 $router->frontendGroup('react', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/login', [$frontendController, 'login'], ['web'])->name('login.page');
@@ -43,12 +45,19 @@ $router->frontendGroup('vue', 'layouts.app', function (Router $router) use ($fro
 $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/storefront', [$frontendController, 'storefront'], ['web'])->name('storefront.home');
     $router->add('GET', '/storefront/product/{slug}', [$frontendController, 'product'], ['web'])->name('storefront.product');
+    $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
 }, ['middleware' => 'web']);
 
 $router->frontendGroup('server', 'layouts.app', function (Router $router) use ($frontendController, $userController): void {
-    $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
     $router->add('POST', '/logout', [$userController, 'logout'], ['web'])->name('logout');
 }, ['middleware' => 'web']);
+
+$router->group(['middleware' => ['auth:admin', 'web']], function (Router $router) use ($catalogAdminController): void {
+    $router->add('POST', '/admin/catalog/categories', [$catalogAdminController, 'storeCategory'])->name('admin.catalog.categories.store');
+    $router->add('POST', '/admin/catalog/products', [$catalogAdminController, 'storeProduct'])->name('admin.catalog.products.store');
+    $router->add('PUT', '/admin/catalog/products/{id}', [$catalogAdminController, 'updateProduct'])->name('admin.catalog.products.update');
+    $router->add('POST', '/admin/catalog/products/{id}/active', [$catalogAdminController, 'toggleProduct'])->name('admin.catalog.products.active');
+});
 
 $router->frontendGroup('ghost', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/ghost-preview', [$frontendController, 'preview'], ['web'])->name('ghost.preview');

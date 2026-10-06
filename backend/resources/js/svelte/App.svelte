@@ -1,5 +1,6 @@
 <script>
     import ProductDetail from './ProductDetail.svelte';
+    import AdminCatalog from './AdminCatalog.svelte';
 
     export let page = {};
 
@@ -38,6 +39,8 @@
     </main>
 {:else if page.product}
     <ProductDetail product={page.product} />
+{:else if page.admin}
+    <AdminCatalog admin={page.admin} />
 {:else}
 <div class="min-h-screen bg-[#080808] text-stone-100">
     <header class="border-b border-white/10 bg-black/70 backdrop-blur">
