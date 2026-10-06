@@ -4,7 +4,7 @@
 
 Ornament World is a planned premium men's jewellery e-commerce platform for the Bangladesh market. Its product principle is: "Luxury look, simple shopping."
 
-The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, and an in-progress Phase 4 order-operations slice. Admin catalog editing/images, browser admin authentication/session flow, phone confirmation as an external business process, and Pathao business features are not complete yet.
+The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, and an in-progress Phase 5 shipment slice. Admin catalog editing/images, browser admin authentication/session flow, phone confirmation as an external business process, and live Pathao account activation remain incomplete.
 
 ## Source of truth
 
@@ -31,6 +31,7 @@ The repository now contains the initial Nemesis application, integrated Svelte/V
 - Checkout imports and validates the committed Bangladesh location source on the server.
 - Order totals, active catalog state, discounts, stock, and delivery charge are recalculated in a transaction.
 - Protected staff tools provide order search/filtering, lifecycle transitions, status history, fraud review, previous-phone order history, and stock release for cancellation/rejection.
+- Phase 5 adds isolated Pathao provider code, shipment/idempotency persistence, bounded retry/manual fallback state, a protected shipment action, and a visible manual-shipment queue. The provider is not live-configured or live-tested.
 
 ## Planned operational workflow
 
@@ -40,6 +41,7 @@ The repository now contains the initial Nemesis application, integrated Svelte/V
 - Pathao requests must be idempotent and recoverable.
 - Failed Pathao requests remain in a `Pathao Pending / Manual Shipment Required` admin queue.
 - Admins manage catalog, variants, images, prices, discounts, stock, orders, notes, and review flags.
+- Confirmed orders can be sent to the server-side shipment adapter; provider failures stay attached to the order and can be retried or resolved manually.
 
 ## Engineering boundaries
 

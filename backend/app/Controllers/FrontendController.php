@@ -7,6 +7,7 @@ use App\Services\CatalogService;
 use App\Services\CatalogAdminService;
 use App\Services\CheckoutService;
 use App\Services\OrderAdminService;
+use App\Services\ShipmentService;
 use Nemesis\Core\Controller;
 use Nemesis\Http\Request;
 
@@ -43,6 +44,11 @@ class FrontendController extends Controller
 
         if ($data['pageProps']['adminOrder'] === null) {
             http_response_code(404);
+        } else {
+            $shipment = (new ShipmentService())->detail($reference);
+            $data['pageProps']['adminOrder']['shipment'] = $shipment['shipment'];
+            $data['pageProps']['adminOrder']['shipmentEligible'] = $shipment['eligible'];
+            $data['pageProps']['adminOrder']['shipmentCanRetry'] = $shipment['canRetry'];
         }
 
         $this->render('admin-order', $data);

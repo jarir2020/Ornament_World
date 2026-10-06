@@ -5,6 +5,8 @@
     let selectedStatus = '';
     let note = '';
     let reviewNote = '';
+    let manualReference = '';
+    let manualNote = '';
     let message = '';
     let error = '';
     let saving = false;
@@ -85,6 +87,39 @@
             saving = false;
         }
     }
+
+    async function createShipment() {
+        if (!order || saving) return;
+        clearFeedback();
+        saving = true;
+        try {
+            await request(`/admin/orders/${encodeURIComponent(order.reference)}/shipment`, {});
+            message = 'Shipment action saved.';
+            window.location.reload();
+        } catch (actionError) {
+            error = actionError.message;
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function recordManualShipment() {
+        if (!order || saving || !manualReference.trim() || !manualNote.trim()) return;
+        clearFeedback();
+        saving = true;
+        try {
+            await request(`/admin/orders/${encodeURIComponent(order.reference)}/manual-shipment`, {
+                manual_reference: manualReference,
+                note: manualNote,
+            });
+            message = 'Manual shipment recorded.';
+            window.location.reload();
+        } catch (actionError) {
+            error = actionError.message;
+        } finally {
+            saving = false;
+        }
+    }
 </script>
 
 <svelte:head><title>{order ? `${order.reference} | Order admin` : 'Order not found | Ornaments World'}</title></svelte:head>
@@ -132,6 +167,33 @@
                             <div class="mt-5 grid gap-3"><label class="text-sm text-stone-300">Move to<select bind:value={selectedStatus} class="mt-2 w-full rounded-xl border border-white/10 bg-[#151515] px-4 py-3 text-sm text-white outline-none focus:border-amber-300">{#each order.allowedTransitions as status}<option value={status}>{status.replaceAll('_', ' ')}</option>{/each}</select></label><textarea bind:value={note} rows="3" placeholder="Confirmation note or reason" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300"></textarea><button class="rounded-full bg-amber-300 px-5 py-3 text-sm font-semibold text-black hover:bg-amber-200 disabled:opacity-50" type="button" disabled={saving} on:click={transition}>Save status</button></div>
                         {:else}<p class="mt-4 text-sm text-stone-500">No further status transitions are available.</p>{/if}
                         <div class="mt-6 border-t border-white/10 pt-5"><label class="text-sm text-stone-300">Add internal note<textarea bind:value={note} rows="3" placeholder="Call outcome or operational note" class="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300"></textarea></label><button class="mt-3 rounded-full border border-amber-300/50 px-5 py-3 text-sm font-semibold text-amber-100 hover:bg-amber-200/10 disabled:opacity-50" type="button" disabled={saving || !note.trim()} on:click={addNote}>Add note</button></div>
+                    </section>
+
+                    <section class="rounded-2xl border border-sky-200/20 bg-sky-200/[0.04] p-6">
+                        <div class="flex items-start justify-between gap-4"><div><h2 class="font-medium text-white">Shipment</h2><p class="mt-1 text-xs leading-5 text-stone-400">Order status stays separate from courier status. Provider requests are server-side and idempotent.</p></div>{#if order.shipment}<span class="rounded-full bg-sky-200/10 px-3 py-1 text-xs text-sky-200">{order.shipment.status.replaceAll('_', ' ')}</span>{/if}</div>
+                        {#if order.shipment}
+                            <dl class="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+                                <div><dt class="text-stone-500">Attempts</dt><dd class="mt-1 text-white">{order.shipment.attemptCount}</dd></div>
+                                {#if order.shipment.externalId}<div><dt class="text-stone-500">Provider reference</dt><dd class="mt-1 break-all text-white">{order.shipment.externalId}</dd></div>{/if}
+                                {#if order.shipment.manualReference}<div><dt class="text-stone-500">Manual reference</dt><dd class="mt-1 break-all text-white">{order.shipment.manualReference}</dd></div>{/if}
+                                {#if order.shipment.lastHttpStatus}<div><dt class="text-stone-500">Last response</dt><dd class="mt-1 text-white">HTTP {order.shipment.lastHttpStatus}</dd></div>{/if}
+                            </dl>
+                            {#if order.shipment.lastError}<p class="mt-4 rounded-xl border border-rose-300/20 bg-rose-300/[0.05] px-4 py-3 text-sm leading-6 text-rose-100">{order.shipment.lastError}</p>{/if}
+                            {#if order.shipment.manualNote}<p class="mt-4 text-sm leading-6 text-stone-400">{order.shipment.manualNote}</p>{/if}
+                            {#if order.shipment.attempts?.length}<div class="mt-5 border-t border-white/10 pt-4"><p class="text-xs uppercase tracking-[0.2em] text-stone-500">Attempt history</p><div class="mt-3 space-y-3">{#each order.shipment.attempts as attempt}<div class="flex justify-between gap-3 text-xs"><span class="text-stone-300">#{attempt.attemptNo} · {attempt.outcome}{attempt.httpStatus ? ` · HTTP ${attempt.httpStatus}` : ''}</span><span class="text-stone-600">{attempt.createdAt}</span></div>{/each}</div></div>{/if}
+                        {:else}<p class="mt-5 text-sm leading-6 text-stone-400">No shipment has been created yet.</p>{/if}
+
+                        {#if order.shipmentEligible || order.shipmentCanRetry}
+                            <button class="mt-5 w-full rounded-full bg-sky-200 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-100 disabled:opacity-50" type="button" disabled={saving} on:click={createShipment}>{order.shipmentCanRetry ? 'Retry Pathao shipment' : 'Send to Pathao / create shipment'}</button>
+                        {:else if order.status === 'confirmed' && order.shipment?.status === 'manual_required'}
+                            <p class="mt-5 text-sm leading-6 text-amber-100">Automatic retry is not recommended for this provider response. Record the courier reference below after arranging shipment manually.</p>
+                        {:else if order.status !== 'confirmed' && !['processing', 'shipped'].includes(order.status)}
+                            <p class="mt-5 text-sm leading-6 text-stone-500">Confirm this order before creating a courier shipment.</p>
+                        {/if}
+
+                        {#if ['confirmed', 'processing', 'shipped'].includes(order.status) && order.shipment?.status !== 'created'}
+                            <div class="mt-6 border-t border-white/10 pt-5"><p class="text-sm font-medium text-white">Manual shipment fallback</p><div class="mt-3 grid gap-3"><input bind:value={manualReference} placeholder="Courier reference" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-sky-200" /><textarea bind:value={manualNote} rows="2" placeholder="Where and when was it created?" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-sky-200"></textarea><button class="rounded-full border border-sky-200/50 px-5 py-3 text-sm font-semibold text-sky-100 hover:bg-sky-200/10 disabled:opacity-50" type="button" disabled={saving || !manualReference.trim() || !manualNote.trim()} on:click={recordManualShipment}>Record manual shipment</button></div></div>
+                        {/if}
                     </section>
 
                     <section class="rounded-2xl border border-white/10 bg-white/[0.04] p-6"><h2 class="font-medium text-white">Fraud review</h2>{#if order.fraudFlags?.length}<textarea bind:value={reviewNote} rows="2" placeholder="Review note" class="mt-4 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300"></textarea><div class="mt-4 space-y-4">{#each order.fraudFlags as flag}<div class="rounded-xl border border-rose-300/20 bg-rose-300/[0.05] p-4"><div class="flex justify-between gap-3"><p class="text-sm font-medium text-rose-100">{flag.code.replaceAll('_', ' ')}</p><span class="text-xs text-rose-200">{flag.resolution}</span></div><p class="mt-2 text-xs leading-6 text-stone-400">{flag.reason}</p><div class="mt-3 flex flex-wrap gap-2"><button type="button" class="rounded-full border border-emerald-300/40 px-3 py-1.5 text-xs text-emerald-200" on:click={() => reviewFlag(flag.id, 'confirmed')}>Confirm legitimate</button><button type="button" class="rounded-full border border-stone-400/40 px-3 py-1.5 text-xs text-stone-300" on:click={() => reviewFlag(flag.id, 'dismissed')}>Dismiss</button><button type="button" class="rounded-full border border-rose-300/40 px-3 py-1.5 text-xs text-rose-200" on:click={() => reviewFlag(flag.id, 'blocked')}>Block</button></div></div>{/each}</div>{:else}<p class="mt-4 text-sm text-emerald-300">No fraud flags on this order.</p>{/if}</section>

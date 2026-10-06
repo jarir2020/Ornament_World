@@ -84,14 +84,43 @@ SQL;
         if ($where !== []) {
             $query .= 'WHERE ' . implode(' AND ', $where) . "\n";
         }
-        $query .= 'ORDER BY o.created_at DESC, o.id DESC LIMIT 100';
+        $query .= "\nORDER BY o.created_at DESC, o.id DESC LIMIT 100";
 
         $orders = array_map(static fn (array $order): array => self::presentOrderRow($order), Database::view($query, $params));
+        $shipmentQueue = array_map(static fn (array $order): array => self::presentOrderRow($order), Database::view(<<<'SQL'
+SELECT
+    o.id,
+    o.reference,
+    o.status,
+    o.shipment_status,
+    o.review_status,
+    o.customer_name,
+    o.customer_phone,
+    o.district,
+    o.subdistrict,
+    o.subtotal,
+    o.discount_total,
+    o.delivery_charge,
+    o.total,
+    o.risk_score,
+    o.is_suspicious,
+    o.created_at,
+    (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+    (SELECT COUNT(*) FROM fraud_flags ff WHERE ff.order_id = o.id AND ff.resolution = 'pending') AS pending_flag_count
+FROM orders o
+INNER JOIN shipments s ON s.order_id = o.id
+WHERE s.status = 'manual_required'
+  AND o.status IN ('confirmed', 'processing', 'shipped')
+ORDER BY s.updated_at ASC, o.id ASC
+LIMIT 50
+SQL));
 
         return [
             'counts' => $counts,
             'total' => array_sum($counts),
             'pendingFraudFlags' => (int) (Database::view("SELECT COUNT(*) AS total FROM fraud_flags WHERE resolution = 'pending'")[0]['total'] ?? 0),
+            'shipmentQueue' => $shipmentQueue,
+            'pendingShipmentCount' => count($shipmentQueue),
             'orders' => $orders,
         ];
     }

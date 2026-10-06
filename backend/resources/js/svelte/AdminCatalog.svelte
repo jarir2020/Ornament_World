@@ -1,7 +1,7 @@
 <script>
     export let admin = { categories: [], products: [], orders: [], csrfToken: '' };
 
-    $: orderDashboard = admin.orderDashboard ?? { counts: {}, total: 0, pendingFraudFlags: 0, orders: [] };
+    $: orderDashboard = admin.orderDashboard ?? { counts: {}, total: 0, pendingFraudFlags: 0, pendingShipmentCount: 0, shipmentQueue: [], orders: [] };
     $: orderFilters = admin.orderFilters ?? { search: '', status: '' };
 
     let message = '';
@@ -102,7 +102,7 @@
         {#if error}<div class="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div>{/if}
 
         <section class="mt-8 rounded-2xl border border-amber-200/20 bg-amber-200/[0.04] p-5">
-            <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 class="font-medium text-white">Order operations</h2><p class="mt-1 text-xs text-stone-500">Review customer details, phone-confirm orders, and keep shipment state separate.</p></div><span class="text-sm text-amber-200">{orderDashboard.pendingFraudFlags} pending fraud flags</span></div>
+            <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 class="font-medium text-white">Order operations</h2><p class="mt-1 text-xs text-stone-500">Review customer details, phone-confirm orders, and keep shipment state separate.</p></div><div class="flex flex-wrap gap-3 text-sm"><span class="text-amber-200">{orderDashboard.pendingFraudFlags} pending fraud flags</span><span class="text-sky-200">{orderDashboard.pendingShipmentCount} shipment(s) need attention</span></div></div>
             <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
                 {#each Object.entries(orderDashboard.counts ?? {}) as [status, count]}
                     <div class="rounded-xl border border-white/10 bg-black/20 p-3"><p class="text-[10px] uppercase tracking-wider text-stone-500">{status.replaceAll('_', ' ')}</p><p class="mt-2 text-xl font-semibold text-amber-200">{count}</p></div>
@@ -116,6 +116,9 @@
             {#if orderDashboard.orders?.length}
                 <div class="mt-5 overflow-x-auto rounded-xl border border-white/10"><table class="min-w-full text-left text-sm"><thead class="bg-white/[0.03] text-xs uppercase tracking-[0.15em] text-stone-500"><tr><th class="px-4 py-3">Order</th><th class="px-4 py-3">Customer</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Review</th></tr></thead><tbody class="divide-y divide-white/10">{#each orderDashboard.orders as order}<tr><td class="px-4 py-4"><a class="font-medium text-amber-200 hover:text-amber-100" href={`/admin/orders/${order.reference}`}>{order.reference}</a><div class="mt-1 text-xs text-stone-500">{order.itemCount} {order.itemCount === 1 ? 'item' : 'items'} · {order.createdAt}</div></td><td class="px-4 py-4"><div class="font-medium text-white">{order.customerName}</div><div class="mt-1 text-xs text-stone-400">{order.customerPhone}</div><div class="mt-1 text-xs text-stone-500">{order.subdistrict}, {order.district}</div></td><td class="px-4 py-4"><span class="rounded-full bg-white/10 px-2 py-1 text-xs text-stone-300">{order.status.replaceAll('_', ' ')}</span><div class="mt-2 text-xs text-stone-500">Shipment: {order.shipmentStatus.replaceAll('_', ' ')}</div></td><td class="px-4 py-4 text-amber-200">{formatPrice(order.total)}</td><td class="px-4 py-4">{#if order.pendingFlagCount > 0}<span class="rounded-full bg-rose-300/15 px-2 py-1 text-xs text-rose-200">{order.pendingFlagCount} flag(s)</span>{:else}<span class="text-xs text-emerald-300">Clear</span>{/if}</td></tr>{/each}</tbody></table></div>
             {:else}<p class="mt-5 text-sm text-stone-500">No orders match the current filter.</p>{/if}
+            {#if orderDashboard.shipmentQueue?.length}
+                <div class="mt-6 rounded-xl border border-sky-200/20 bg-sky-200/[0.04] p-4"><div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><h3 class="text-sm font-medium text-sky-100">Manual shipment queue</h3><p class="mt-1 text-xs leading-5 text-stone-400">Provider failures remain recoverable here; open an order to retry or record a courier reference.</p></div><span class="text-xs text-sky-200">{orderDashboard.pendingShipmentCount} awaiting resolution</span></div><div class="mt-4 space-y-2">{#each orderDashboard.shipmentQueue as queued}<a class="flex flex-col justify-between gap-2 rounded-lg border border-white/10 px-3 py-3 text-sm hover:border-sky-200/50 sm:flex-row sm:items-center" href={`/admin/orders/${queued.reference}`}><span class="text-sky-100">{queued.reference} · {queued.customerName}</span><span class="text-stone-400">{queued.shipmentStatus.replaceAll('_', ' ')} · {formatPrice(queued.total)}</span></a>{/each}</div></div>
+            {/if}
         </section>
 
         <section class="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">

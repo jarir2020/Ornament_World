@@ -35,4 +35,4 @@
 - Complete browser-level testing of the protected dashboard/detail actions with a real admin authentication/session flow.
 - Add richer reporting definitions and operational filters such as date range and shipment state.
 - Complete the full catalog edit/image workflow and phone-confirmation operating procedure.
-- Pathao shipment creation, idempotency, retry handling, and manual fallback remain Phase 5.
+- Pathao shipment creation, idempotency, retry handling, and manual fallback are tracked in the in-progress Phase 5 slice.
