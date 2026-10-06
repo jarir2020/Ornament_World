@@ -1,11 +1,9 @@
 <?php
 namespace App\Controllers;
 
-use App\Services\AdminAuthService;
+use App\Services\CustomerAccountService;
 use App\Models\User;
-use JarirAhmed\AuthTokenMaker\AuthTokenMaker;
 use Nemesis\Core\Controller;
-use Nemesis\Core\Validator;
 use JarirAhmed\HTTPResponse\HTTPResponse;
 use JarirAhmed\TimeHelper\TimeHelper;
 use Nemesis\Auth\JWT;
@@ -23,15 +21,14 @@ class UserController {
 
         // Validate input data
         if (empty($data['email']) || empty($data['password'])) {
-            HTTPResponse::badRequest();
-            Helpers::json([
-                'error' => true,
-                'message' => 'Email and password are required.'
-            ]);
-            return;
+            $accept = strtolower((string) $request->header('Accept', ''));
+            if (str_contains($accept, 'text/html') || $accept === '') {
+                return Response::redirect('/login?error=invalid_credentials');
+            }
+            return Response::json(['error' => true, 'message' => 'Email and password are required.'], 422);
         }
 
-        $auth = (new AdminAuthService())->authenticate(
+        $auth = (new CustomerAccountService())->authenticate(
             (string) $data['email'],
             (string) $data['password']
         );
@@ -57,10 +54,7 @@ class UserController {
 
         $authToken = JWT::encode($auth);
 
-        $dashboardUrl = ($auth['role'] ?? '') === 'admin' ? '/admin' : '/dashboard';
-        if ($dashboardUrl === '#' || $dashboardUrl === '') {
-            $dashboardUrl = '/dashboard';
-        }
+        $dashboardUrl = ($auth['role'] ?? '') === 'admin' ? '/admin' : '/profile';
 
         $accept = strtolower((string) $request->header('Accept', ''));
         $wantsHtml = str_contains($accept, 'text/html') || $accept === '';
@@ -117,57 +111,50 @@ class UserController {
         ], 200, true); // Pass `true` to enable pretty print
     }
 
-    //Working 100%
-    public function register() {
-        $data = Helpers::getInput();
-
-        //$validator = new \Nemesis\Core\Validator(); //Fully Classified Namespace Name
-
-        $validator = new Validator();
-
-        $rules = [
-            'email' => 'required|email',
-            'password' => 'required|min:6'
-        ];
-
-        if (!$validator->validate($data, $rules)) {
-            HTTPResponse::badRequest();
-            Helpers::json([
-                'error' => true,
-                'message' => 'Validation failed',
-                'details' => $validator->errors()
-            ]);
-            return;
+    public function register(Request $request): Response
+    {
+        try {
+            $auth = (new CustomerAccountService())->register($request->all());
+        } catch (\InvalidArgumentException|\RuntimeException $error) {
+            $accept = strtolower((string) $request->header('Accept', ''));
+            if (str_contains($accept, 'text/html') || $accept === '') {
+                return Response::redirect('/register?error=registration_failed');
+            }
+            return Response::json(['error' => true, 'message' => $error->getMessage()], 422);
         }
 
-        $user = new User();
-
-        // Check if user already exists by email
-        $existingUser = $user->getByEmail($data['email']);
-        if ($existingUser) {
-            HTTPResponse::badRequest(); // Return 400 if user already exists
-            Helpers::json([
-                'error' => true,
-                'message' => 'User already exists with this email.'
-            ]);
-            return;
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+        Session::set('auth', $auth);
+        $authToken = JWT::encode($auth);
+        $accept = strtolower((string) $request->header('Accept', ''));
+        if (str_contains($accept, 'text/html') || $accept === '') {
+            return Response::redirect('/profile');
         }
 
-        // Create new user and generate auth token
-        $authTokenMaker = new AuthTokenMaker();
-        do {
-            $authToken = $authTokenMaker->generate(60); // Ensure the token is 60 characters
-            // Check if the generated token already exists in the database
-            $existingToken = $user->getByAuthToken($authToken);
-        } while ($existingToken || empty($authToken)); // Repeat the generation if the token already exists or is empty
+        return Response::json([
+            'success' => true,
+            'message' => 'Account created successfully.',
+            'auth_token' => $authToken,
+            'redirect_to' => '/profile',
+            'user' => ['id' => $auth['sub'], 'email' => $auth['email'], 'role' => $auth['role']],
+        ], 201);
+    }
 
-        // Create user with email, password, and unique auth token
-        $user->create($data['email'], $data['password'], $authToken);
+    public function updateProfile(Request $request): Response
+    {
+        $auth = $request->getMeta('auth', []);
+        if (!is_array($auth) || !isset($auth['sub']) || !is_numeric($auth['sub'])) {
+            return Response::json(['error' => 'Unauthenticated.'], 401);
+        }
 
-        Helpers::json([
-            'message' => 'User registered successfully.',
-            'auth_token' => $authToken
-        ]);
+        try {
+            $profile = (new CustomerAccountService())->updateProfile((int) $auth['sub'], $request->all());
+            return Response::json(['success' => true, 'data' => $profile]);
+        } catch (\InvalidArgumentException $error) {
+            return Response::json(['success' => false, 'message' => $error->getMessage()], 422);
+        }
     }
 
 

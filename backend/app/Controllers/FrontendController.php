@@ -6,11 +6,13 @@ namespace App\Controllers;
 use App\Services\CatalogService;
 use App\Services\CatalogAdminService;
 use App\Services\CheckoutService;
+use App\Services\CustomerAccountService;
 use App\Services\OrderAdminService;
 use App\Services\ShipmentService;
 use App\Services\SeoService;
 use Nemesis\Core\Controller;
 use Nemesis\Http\Request;
+use Nemesis\Http\Session;
 
 class FrontendController extends Controller
 {
@@ -21,9 +23,20 @@ class FrontendController extends Controller
 
     public function login(Request $request): void
     {
-        $data = $this->pageData($request);
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['authPage'] = 'login';
+        $data['pageProps']['authError'] = (string) $request->query('error', '');
         $data['pageProps']['seo'] = $this->seoData(['robots' => 'noindex,nofollow']);
-        $this->render('login', $data);
+        $this->render('home', $data);
+    }
+
+    public function register(Request $request): void
+    {
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['authPage'] = 'register';
+        $data['pageProps']['authError'] = (string) $request->query('error', '');
+        $data['pageProps']['seo'] = $this->seoData(['robots' => 'noindex,nofollow']);
+        $this->render('home', $data);
     }
 
     public function admin(Request $request): void
@@ -66,9 +79,14 @@ class FrontendController extends Controller
 
     public function profile(Request $request): void
     {
-        $data = $this->pageData($request);
+        $auth = $request->getMeta('auth', []);
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['profilePage'] = true;
+        $data['pageProps']['profile'] = is_array($auth) && isset($auth['sub'])
+            ? (new CustomerAccountService())->profile((int) $auth['sub'])
+            : null;
         $data['pageProps']['seo'] = $this->seoData(['robots' => 'noindex,nofollow']);
-        $this->render('profile', $data);
+        $this->render('home', $data);
     }
 
     public function settings(Request $request): void
@@ -246,6 +264,12 @@ class FrontendController extends Controller
     {
         $framework = (string) $request->getMeta('frontend.framework', $fallbackFramework);
         $auth = $request->getMeta('auth', []);
+        if (!is_array($auth) || $auth === []) {
+            $sessionAuth = Session::get('auth');
+            if (is_array($sessionAuth) && isset($sessionAuth['sub']) && is_numeric($sessionAuth['sub'])) {
+                $auth = (new CustomerAccountService())->sessionUser((int) $sessionAuth['sub']) ?? [];
+            }
+        }
 
         return [
             'framework' => $framework,
@@ -266,6 +290,11 @@ class FrontendController extends Controller
                 'cartCount' => 0,
                 'isAuthenticated' => !empty($auth),
                 'authRole' => $auth['role'] ?? null,
+                'csrfToken' => function_exists('csrf_token') ? csrf_token() : '',
+                'authPage' => null,
+                'authError' => '',
+                'profilePage' => false,
+                'profile' => null,
                 'seo' => $this->seoData(),
             ],
         ];

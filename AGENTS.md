@@ -8,7 +8,7 @@ The authoritative implementation direction is in [plan-final.md](plan-final.md).
 
 ## Current repository state
 
-The repository now contains the approved planning documents, the initial Nemesis foundation, the Phase 2 catalog/admin path, the Phase 3 cart/guest-checkout path, the Phase 4 order-operations path, the Phase 5 shipment path, the Phase 6 SEO/analytics foundation, and the Phase 7 local release gate inside `backend/`. Catalog browsing, protected catalog actions, guest order creation, configurable delivery rules, server-side totals, checkout retry idempotency, status transitions, audit history, fraud review, customer order history, stock release on cancellation/rejection, shipment persistence, Pathao idempotency state, manual shipment recovery, public metadata, crawl files, branded 404 handling, provider-neutral event instrumentation, and browser-session admin protection are implemented and locally verified as applicable. Complete admin catalog image management, phone confirmation as an external business process, live Pathao account activation/provider verification, final brand-content handoff, deployment, and live QA are not complete; do not imply that those features exist until they are built and verified.
+The repository now contains the approved planning documents, the initial Nemesis foundation, the Phase 2 catalog/admin path, the Phase 3 cart/guest-checkout path, the Phase 4 order-operations path, the Phase 5 shipment path, the Phase 6 SEO/analytics foundation, the Phase 7 local release gate, and the Phase 8 optional customer-account path inside `backend/`. Catalog browsing, protected catalog actions, guest order creation, optional customer registration/login/profile management, configurable delivery rules, server-side totals, checkout retry idempotency, status transitions, audit history, fraud review, customer order history, stock release on cancellation/rejection, shipment persistence, Pathao idempotency state, manual shipment recovery, public metadata, crawl files, branded 404 handling, provider-neutral event instrumentation, and browser-session admin protection are implemented and locally verified as applicable. Complete admin catalog image management, phone confirmation as an external business process, live Pathao account activation/provider verification, final brand-content handoff, deployment, and live QA are not complete; do not imply that those features exist until they are built and verified.
 
 ## Technology direction
 
@@ -25,7 +25,7 @@ The repository now contains the approved planning documents, the initial Nemesis
 1. Read `plan-final.md` and the relevant phase before implementation.
 2. Preserve unrelated user work and inspect existing files before editing them.
 3. Keep the first release mobile-first, fast, accessible, and visually consistent with the black, gold, and white luxury theme.
-4. Keep checkout guest-friendly. Do not add mandatory customer registration unless the plan is explicitly revised.
+4. Keep checkout guest-friendly. Customer accounts are optional and must never become a prerequisite for placing an order.
 5. Treat the browser as untrusted. Recalculate price, discounts, delivery charge, stock, and order totals on the backend.
 6. Keep order status and shipment status separate. Only confirmed orders may be sent to Pathao.
 7. Pathao failures must leave a visible recoverable manual-shipment queue; never discard an order because an external request failed.

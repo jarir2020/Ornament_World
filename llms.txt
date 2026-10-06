@@ -4,7 +4,7 @@
 
 Ornament World is a planned premium men's jewellery e-commerce platform for the Bangladesh market. Its product principle is: "Luxury look, simple shopping."
 
-The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, the Phase 5 shipment slice, the Phase 6 SEO/analytics foundation, and the Phase 7 local release gate. Browser admin session protection and checkout retry idempotency are implemented. Admin catalog image management, phone confirmation as an external business process, live Pathao account activation, final brand-content handoff, deployment, and live QA remain incomplete.
+The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, the Phase 5 shipment slice, the Phase 6 SEO/analytics foundation, the Phase 7 local release gate, and the Phase 8 optional customer-account slice. Browser admin session protection, checkout retry idempotency, optional customer registration/login/profile management, and account-linked order history are implemented. Admin catalog image management, phone confirmation as an external business process, live Pathao account activation, final brand-content handoff, deployment, and live QA remain incomplete.
 
 ## Source of truth
 
@@ -23,7 +23,8 @@ The repository now contains the initial Nemesis application, integrated Svelte/V
 ## Planned user experience
 
 - Mobile-first premium black, gold, and white storefront.
-- Customers can browse products without an account.
+- Customers can browse products and use guest checkout without an account.
+- Customers may optionally register, sign in, edit their profile, and review orders linked after sign-in.
 - Purchase paths are `Order Now` or `Add to Cart` followed by guest checkout.
 - Required checkout data includes name, normalized Bangladesh phone, complete address, district, and area/thana/upazila.
 - Delivery fees start as configurable rules: ৳60 inside Dhaka and ৳120 outside Dhaka.
@@ -54,4 +55,4 @@ The repository now contains the initial Nemesis application, integrated Svelte/V
 
 ## Future direction
 
-The architecture should allow international shipping, multiple currencies, online payments, additional courier providers, OTP verification, and richer customer accounts without complicating the first Bangladesh release.
+The architecture should allow international shipping, multiple currencies, online payments, additional courier providers, OTP verification, and richer customer accounts without making registration mandatory for checkout.

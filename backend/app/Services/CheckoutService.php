@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use Nemesis\Core\Database;
+use Nemesis\Http\Session;
 
 /**
  * Guest checkout domain service.
@@ -70,6 +71,7 @@ SQL));
     public function createOrder(array $input): array
     {
         $idempotencyKey = $this->validatedIdempotencyKey($input['idempotency_key'] ?? $input['idempotencyKey'] ?? null);
+        $customerId = $this->sessionCustomerId();
         if ($idempotencyKey !== null) {
             $existing = Database::view(
                 'SELECT reference FROM orders WHERE idempotency_key = :idempotency_key LIMIT 1',
@@ -152,17 +154,18 @@ SQL, ['district' => $location['district']]);
 
             $order = $db->prepare(<<<'SQL'
 INSERT INTO orders
-    (reference, idempotency_key, status, shipment_status, review_status, customer_name, customer_phone, customer_email,
+    (reference, idempotency_key, customer_id, status, shipment_status, review_status, customer_name, customer_phone, customer_email,
      delivery_address, district, subdistrict, postoffice, postcode, address_hash, delivery_zone_slug,
      subtotal, discount_total, delivery_charge, total, risk_score, is_suspicious)
 VALUES
-    (:reference, :idempotency_key, 'new_order', 'not_ready', 'pending', :customer_name, :customer_phone, :customer_email,
+    (:reference, :idempotency_key, :customer_id, 'new_order', 'not_ready', 'pending', :customer_name, :customer_phone, :customer_email,
      :delivery_address, :district, :subdistrict, :postoffice, :postcode, :address_hash, :delivery_zone_slug,
      :subtotal, :discount_total, :delivery_charge, :total, :risk_score, :is_suspicious)
 SQL);
             $order->execute([
                 'reference' => $reference,
                 'idempotency_key' => $idempotencyKey,
+                'customer_id' => $customerId,
                 'customer_name' => $customer['name'],
                 'customer_phone' => $customer['phone'],
                 'customer_email' => $customer['email'],
@@ -349,6 +352,18 @@ SQL, ['reference' => $reference]);
 
         // Store only a digest; the browser keeps the opaque retry key.
         return hash('sha256', $key);
+    }
+
+    private function sessionCustomerId(): ?int
+    {
+        $auth = Session::get('auth');
+        if (!is_array($auth) || !isset($auth['sub']) || !is_numeric($auth['sub']) || ($auth['role'] ?? 'user') === 'admin') {
+            return null;
+        }
+
+        $userId = (int) $auth['sub'];
+        $exists = Database::view('SELECT id FROM users WHERE id = :id LIMIT 1', ['id' => $userId]);
+        return $exists === [] ? null : $userId;
     }
 
     /** @return array<int, array{product_id: int, variant_id: ?int, quantity: int}> */

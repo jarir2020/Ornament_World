@@ -32,7 +32,7 @@ The application will use one Nemesis application with an integrated Svelte prese
 - **Asset pipeline:** Vite with `@sveltejs/vite-plugin-svelte`, Tailwind CSS, and `@tailwindcss/vite`.
 - **Database:** MySQL for the current project direction and production baseline. SQLite remains useful for isolated tests only.
 - **Data delivery:** Nemesis controllers render the Svelte-compatible views and pass page data as props. JSON endpoints are added only where asynchronous browser interactions, admin actions, webhooks, or external integrations require them.
-- **Authentication:** Secure admin authentication with server-side sessions or token-based authentication according to the framework's supported pattern. Customers do not need accounts for the first release.
+- **Authentication:** Secure admin authentication with server-side sessions or token-based authentication according to the framework's supported pattern. Customer accounts are optional: customers may register, sign in, and manage a profile, but guest checkout remains available and account creation is never mandatory.
 - **Media:** Product images stored outside the database, with validated paths/URLs recorded in the database.
 - **Configuration:** Environment variables for database, app URL, mail/SMS, Pathao, analytics, and other secrets. Secrets must never be committed to source control or displayed in logs.
 
@@ -116,7 +116,7 @@ The first release will include:
 5. **Guest checkout / direct order form**
    - `Order Now` opens the same validated checkout flow with one selected product.
    - Cart checkout supports multiple products.
-   - No mandatory registration or account creation.
+   - No mandatory registration or account creation; optional customer accounts may retain profile details and account-linked order history.
    - Only necessary information is requested.
 
 6. **Order success page**

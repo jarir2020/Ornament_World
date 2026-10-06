@@ -40,17 +40,15 @@ $orderAdminController = new OrderAdminController();
 $shipmentAdminController = new ShipmentAdminController();
 $seoController = new SeoController();
 
-$router->frontendGroup('react', 'layouts.app', function (Router $router) use ($frontendController): void {
-    $router->add('GET', '/login', [$frontendController, 'login'], ['web'])->name('login.page');
-    $router->add('GET', '/profile', [$frontendController, 'profile'], ['web'])->name('profile.page');
-}, ['middleware' => 'web']);
-
 $router->frontendGroup('vue', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/dashboard', [$frontendController, 'dashboard'], ['web'])->name('dashboard.page');
     $router->add('GET', '/settings', [$frontendController, 'settings'], ['web'])->name('settings.page');
 }, ['middleware' => 'web']);
 
 $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($frontendController): void {
+    $router->add('GET', '/login', [$frontendController, 'login'], ['web'])->name('login.page');
+    $router->add('GET', '/register', [$frontendController, 'register'], ['web'])->name('register.page');
+    $router->add('GET', '/profile', [$frontendController, 'profile'], ['customer'])->name('profile.page');
     $router->add('GET', '/storefront', [$frontendController, 'storefront'], ['web'])->name('storefront.home');
     $router->add('GET', '/storefront/product/{slug}', [$frontendController, 'product'], ['web'])->name('storefront.product');
     $router->add('GET', '/checkout', [$frontendController, 'checkout'], ['web'])->name('checkout.page');
@@ -109,7 +107,8 @@ $router->add('PUT', '/product/{id}', [$productController, 'update']);
 $router->add('DELETE', '/product/{id}', [$productController, 'delete']);
 
 $router->add('POST', '/login', [$userController, 'login'], ['web'])->name('login.submit');
-$router->add('POST', '/register', [$userController, 'register']);
+$router->add('POST', '/register', [$userController, 'register'], ['web'])->name('register.submit');
+$router->add('PUT', '/profile', [$userController, 'updateProfile'], ['web', 'customer'])->name('profile.update');
 
 $router->add('GET', '/application', [$applicationsController, 'viewAll']);
 $router->add('POST', '/application', [$applicationsController, 'create']);

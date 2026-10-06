@@ -20,7 +20,7 @@ The guiding principle is **Luxury look, simple shopping.**
 
 ## Status
 
-The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, the Phase 5 shipment slice, the Phase 6 SEO/analytics foundation, and the Phase 7 local release gate. Deployment and live verification remain pending. Feature implementation proceeds phase by phase according to [plan-final.md](plan-final.md).
+The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, the Phase 5 shipment slice, the Phase 6 SEO/analytics foundation, the Phase 7 local release gate, and the Phase 8 optional customer-account slice. Deployment and live verification remain pending. Feature implementation proceeds phase by phase according to [plan-final.md](plan-final.md).
 
 ## Documentation
 
@@ -33,6 +33,7 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 - [Phase 5 Pathao shipment progress](phase-5-pathao.md)
 - [Phase 6 SEO, analytics, and performance progress](phase-6-seo-analytics.md)
 - [Phase 7 QA and launch record](phase-7-qa-launch.md)
+- [Phase 8 optional customer accounts](phase-8-customer-accounts.md)
 - [Framework fixes](Framework_Fixes.md)
 - [Agent and contributor guidance](AGENTS.md)
 - [LLM project context](llms.txt)
@@ -46,6 +47,7 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 - `backend/database/migrations/2026_10_06_020000_create_order_operations.php` — Phase 4 status, review, and stock-release fields.
 - `backend/database/migrations/2026_10_06_030000_create_shipments.php` — Phase 5 shipment and sanitized-attempt audit tables.
 - `backend/database/migrations/2026_10_06_040000_add_checkout_idempotency.php` — Phase 7 duplicate-submit protection.
+- `backend/database/migrations/2026_10_06_050000_add_customer_accounts.php` — optional customer profile fields and account-linked orders.
 - `backend/public/router.php` — local PHP-server bridge so extension routes reach Nemesis while real assets remain static.
 - `backend/database/seeders/CatalogSeeder.php` — repeatable local demo catalog seed.
 
@@ -64,7 +66,7 @@ Svelte props will be used for parent-to-child component data flow. Nemesis contr
 
 1. Catalog, categories, variants, images, discounts, and stock.
 2. Responsive homepage, listing pages, and product detail pages.
-3. Cart and direct-order checkout without mandatory registration.
+3. Cart and direct-order checkout without mandatory registration, plus optional customer registration, login, profile editing, and account-linked order history.
 4. Server-side price, stock, customer, district, address, and delivery validation.
 5. Admin order lifecycle from new order through delivery or cancellation.
 6. Suspicious/duplicate order review and previous-order history.

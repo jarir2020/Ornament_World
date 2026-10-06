@@ -6,6 +6,8 @@
     import AdminCatalog from './AdminCatalog.svelte';
     import OrderSuccess from './OrderSuccess.svelte';
     import ContentPage from './ContentPage.svelte';
+    import CustomerAuth from './CustomerAuth.svelte';
+    import CustomerProfile from './CustomerProfile.svelte';
     import { trackEvent } from './analytics.js';
 
     export let page = {};
@@ -26,7 +28,22 @@
         } catch (storageError) {
             cart = [];
         }
+
+        const logoutListener = () => logout();
+        window.addEventListener('ornaments:logout', logoutListener);
+        return () => window.removeEventListener('ornaments:logout', logoutListener);
     });
+
+    async function logout() {
+        try {
+            await fetch('/logout', {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'X-CSRF-TOKEN': page.csrfToken || '' },
+            });
+        } finally {
+            window.location.assign('/storefront');
+        }
+    }
 
     function persistCart() {
         sessionStorage.setItem('ornaments_cart', JSON.stringify(cart));
@@ -104,7 +121,7 @@
 </script>
 
 <svelte:head>
-    <title>{page.notFound || page.notFoundPage ? `Page not found | ${brand}` : page.product ? `${page.product.name} | ${brand}` : page.help ? `${page.help.title} | ${brand}` : `${brand} | Men's jewellery`}</title>
+    <title>{page.authPage === 'register' ? `Create account | ${brand}` : page.authPage === 'login' ? `Sign in | ${brand}` : page.profilePage ? `My profile | ${brand}` : page.notFound || page.notFoundPage ? `Page not found | ${brand}` : page.product ? `${page.product.name} | ${brand}` : page.help ? `${page.help.title} | ${brand}` : `${brand} | Men's jewellery`}</title>
     <meta name="description" content={page.product?.shortDescription ?? 'Refined men\'s jewellery from Ornaments World.'} />
 </svelte:head>
 
@@ -120,6 +137,10 @@
     <main class="grid min-h-screen place-items-center bg-[#080808] px-6 text-center text-stone-100">
         <div><p class="text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">404</p><h1 class="mt-4 text-4xl font-semibold text-white">That page has moved on.</h1><p class="mt-4 max-w-md leading-7 text-stone-400">The page you requested is not part of the current collection.</p><a class="mt-8 inline-block rounded-full bg-amber-300 px-6 py-3 text-sm font-semibold text-black" href="/storefront">Return to collections</a></div>
     </main>
+{:else if page.authPage}
+    <CustomerAuth mode={page.authPage} csrfToken={page.csrfToken} errorCode={page.authError} />
+{:else if page.profilePage}
+    <CustomerProfile profile={page.profile} csrfToken={page.csrfToken} />
 {:else if page.product}
     <ProductDetail product={page.product} onAddToCart={addToCart} onOrderNow={orderNow} />
 {:else if page.checkout}
@@ -142,6 +163,13 @@
             </a>
             <a class="hidden text-sm text-stone-300 transition hover:text-amber-200 sm:inline" href="#collections">Collections</a>
             <a class="hidden text-sm text-stone-300 transition hover:text-amber-200 sm:inline" href="#story">Our story</a>
+            {#if page.isAuthenticated}
+                <a class="hidden text-sm text-stone-300 transition hover:text-amber-200 sm:inline" href="/profile">Profile</a>
+                <button class="hidden text-sm text-stone-400 transition hover:text-amber-200 sm:inline" type="button" on:click={logout}>Sign out</button>
+            {:else}
+                <a class="hidden text-sm text-stone-300 transition hover:text-amber-200 sm:inline" href="/login">Sign in</a>
+                <a class="hidden text-sm text-stone-300 transition hover:text-amber-200 sm:inline" href="/register">Create account</a>
+            {/if}
             <button class="relative rounded-full border border-amber-300/40 px-4 py-2 text-sm text-amber-100 transition hover:border-amber-200 hover:bg-amber-200/10" type="button" on:click={() => showCart = true} aria-label={`Shopping bag with ${cartCount} items`}>
                 Bag
                 {#if cartCount > 0}
