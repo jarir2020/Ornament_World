@@ -1,5 +1,6 @@
 <script>
     import { onMount } from 'svelte';
+    import { trackEvent } from './analytics.js';
 
     export let checkout = {};
 
@@ -24,6 +25,18 @@
     onMount(() => {
         try {
             items = JSON.parse(sessionStorage.getItem('ornaments_checkout_items') || '[]');
+            if (items.length) {
+                trackEvent('begin_checkout', {
+                    currency: 'BDT',
+                    value: items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0),
+                    items: items.map((item) => ({
+                        item_id: String(item.sku || item.variantId || item.productId),
+                        item_name: item.name,
+                        price: Number(item.price || 0),
+                        quantity: Number(item.quantity || 0),
+                    })),
+                });
+            }
         } catch (storageError) {
             items = [];
         }

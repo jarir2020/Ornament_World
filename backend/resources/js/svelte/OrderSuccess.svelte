@@ -1,5 +1,24 @@
 <script>
+    import { onMount } from 'svelte';
+    import { trackOnce } from './analytics.js';
+
     export let order = null;
+
+    onMount(() => {
+        if (!order?.reference) return;
+        trackOnce(`purchase_${order.reference}`, 'purchase', {
+            transaction_id: order.reference,
+            currency: 'BDT',
+            value: Number(order.total || 0),
+            items: (order.items || []).map((item) => ({
+                item_id: item.name,
+                item_name: item.name,
+                item_variant: item.variant || undefined,
+                price: Number(item.total || 0) / Math.max(1, Number(item.quantity || 1)),
+                quantity: Number(item.quantity || 0),
+            })),
+        });
+    });
 
     function formatPrice(value) {
         return new Intl.NumberFormat('en-BD', {

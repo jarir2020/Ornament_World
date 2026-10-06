@@ -11,6 +11,7 @@ use App\Controllers\CatalogAdminController;
 use App\Controllers\CheckoutController;
 use App\Controllers\OrderAdminController;
 use App\Controllers\ShipmentAdminController;
+use App\Controllers\SeoController;
 
 // Instantiate the router
 $router = isset($container) ? $container->make(\Nemesis\Router\Router::class) : new Router();
@@ -37,6 +38,7 @@ $catalogAdminController = new CatalogAdminController();
 $checkoutController = new CheckoutController();
 $orderAdminController = new OrderAdminController();
 $shipmentAdminController = new ShipmentAdminController();
+$seoController = new SeoController();
 
 $router->frontendGroup('react', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/login', [$frontendController, 'login'], ['web'])->name('login.page');
@@ -53,11 +55,14 @@ $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($
     $router->add('GET', '/storefront/product/{slug}', [$frontendController, 'product'], ['web'])->name('storefront.product');
     $router->add('GET', '/checkout', [$frontendController, 'checkout'], ['web'])->name('checkout.page');
     $router->add('GET', '/checkout/success/{reference}', [$frontendController, 'orderSuccess'], ['web'])->name('checkout.success');
+    $router->add('GET', '/help/{slug}', [$frontendController, 'help'], ['web'])->name('help.page');
     $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
     $router->add('GET', '/admin/orders/{reference}', [$frontendController, 'adminOrder'], ['auth:admin'])->name('admin.orders.show');
 }, ['middleware' => 'web']);
 
 $router->add('POST', '/checkout/orders', [$checkoutController, 'store'], ['web'])->name('checkout.orders.store');
+$router->add('GET', '/robots.txt', [$seoController, 'robots'])->name('seo.robots');
+$router->add('GET', '/sitemap.xml', [$seoController, 'sitemap'])->name('seo.sitemap');
 
 $router->frontendGroup('server', 'layouts.app', function (Router $router) use ($frontendController, $userController): void {
     $router->add('POST', '/logout', [$userController, 'logout'], ['web'])->name('logout');
@@ -143,5 +148,7 @@ $router->add('GET', '/throttle-test', function() {
 
 // Health check endpoint — Phase 4 | Added: 2026-04-02
 $router->get('/_health', [\Nemesis\Http\HealthCheck::class, 'handle'])->name('health');
+
+$router->fallback([$frontendController, 'notFound']);
 
 return $router;

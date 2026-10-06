@@ -2113,7 +2113,9 @@ PHP,
 
         echo "Starting development server on http://$host:$port\n";
         $docRoot = '"' . realpath($docRoot) . '"';
-        exec("php -S $host:$port -t $docRoot");
+        $routerScript = realpath($projectRoot . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'router.php');
+        $routerArgument = $routerScript !== false ? ' ' . escapeshellarg($routerScript) : '';
+        exec('php -S ' . escapeshellarg($host . ':' . $port) . ' -t ' . $docRoot . $routerArgument);
         break;
 
     case 'down':

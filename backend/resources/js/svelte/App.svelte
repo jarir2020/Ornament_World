@@ -5,6 +5,8 @@
     import ProductDetail from './ProductDetail.svelte';
     import AdminCatalog from './AdminCatalog.svelte';
     import OrderSuccess from './OrderSuccess.svelte';
+    import ContentPage from './ContentPage.svelte';
+    import { trackEvent } from './analytics.js';
 
     export let page = {};
 
@@ -41,6 +43,17 @@
             ? cart.map((cartItem) => cartItem === existing ? { ...cartItem, quantity: Math.min(10, cartItem.quantity + 1) } : cartItem)
             : [...cart, item];
         persistCart();
+        trackEvent('add_to_cart', {
+            currency: 'BDT',
+            value: Number(item.price || 0),
+            items: [{
+                item_id: String(item.sku || item.variantId || item.productId),
+                item_name: item.name,
+                item_variant: item.variantName || undefined,
+                price: Number(item.price || 0),
+                quantity: 1,
+            }],
+        });
         showCart = true;
     }
 
@@ -89,7 +102,7 @@
 </script>
 
 <svelte:head>
-    <title>{page.notFound ? `Product not found | ${brand}` : page.product ? `${page.product.name} | ${brand}` : `${brand} | Men's jewellery`}</title>
+    <title>{page.notFound || page.notFoundPage ? `Page not found | ${brand}` : page.product ? `${page.product.name} | ${brand}` : page.help ? `${page.help.title} | ${brand}` : `${brand} | Men's jewellery`}</title>
     <meta name="description" content={page.product?.shortDescription ?? 'Refined men\'s jewellery from Ornaments World.'} />
 </svelte:head>
 
@@ -101,12 +114,18 @@
             <a class="mt-8 inline-block rounded-full bg-amber-300 px-6 py-3 text-sm font-semibold text-black" href="/storefront">Return to collections</a>
         </div>
     </main>
+{:else if page.notFoundPage}
+    <main class="grid min-h-screen place-items-center bg-[#080808] px-6 text-center text-stone-100">
+        <div><p class="text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">404</p><h1 class="mt-4 text-4xl font-semibold text-white">That page has moved on.</h1><p class="mt-4 max-w-md leading-7 text-stone-400">The page you requested is not part of the current collection.</p><a class="mt-8 inline-block rounded-full bg-amber-300 px-6 py-3 text-sm font-semibold text-black" href="/storefront">Return to collections</a></div>
+    </main>
 {:else if page.product}
     <ProductDetail product={page.product} onAddToCart={addToCart} onOrderNow={orderNow} />
 {:else if page.checkout}
     <Checkout checkout={page.checkout} />
 {:else if page.orderSuccessPage}
     <OrderSuccess order={page.orderSuccess} />
+{:else if page.help}
+    <ContentPage content={page.help} />
 {:else if page.adminOrderPage}
     <AdminOrderDetail order={page.adminOrder} csrfToken={page.adminOrderCsrfToken} />
 {:else if page.admin}
@@ -259,7 +278,7 @@
 
     <footer class="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-8 text-sm text-stone-500 sm:flex-row sm:items-center sm:justify-between sm:px-10 lg:px-12">
         <span>© {new Date().getFullYear()} {brand}</span>
-        <span>Built with care in Bangladesh</span>
+        <span class="flex flex-wrap gap-4"><a class="hover:text-amber-200" href="/help/delivery">Delivery</a><a class="hover:text-amber-200" href="/help/contact">Contact</a><a class="hover:text-amber-200" href="/help/privacy">Privacy</a><span>Built with care in Bangladesh</span></span>
     </footer>
 
     {#if showCart}

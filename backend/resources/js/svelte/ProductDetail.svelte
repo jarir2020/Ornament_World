@@ -1,4 +1,7 @@
 <script>
+    import { onMount } from 'svelte';
+    import { trackEvent } from './analytics.js';
+
     export let product;
     export let onAddToCart = () => {};
     export let onOrderNow = () => {};
@@ -7,6 +10,20 @@
 
     $: selectedPrice = selectedVariant?.price ?? product?.price ?? 0;
     $: selectedStock = selectedVariant?.stockQty ?? product?.stockQty ?? 0;
+
+    onMount(() => {
+        trackEvent('view_item', {
+            currency: 'BDT',
+            value: Number(selectedPrice || 0),
+            items: [{
+                item_id: String(selectedVariant?.sku || selectedVariant?.id || product?.id),
+                item_name: product?.name,
+                item_category: product?.category?.name,
+                price: Number(selectedPrice || 0),
+                quantity: 1,
+            }],
+        });
+    });
 
     function formatPrice(value) {
         return new Intl.NumberFormat('en-BD', {
@@ -37,8 +54,8 @@
         <div class="mt-10 grid gap-12 lg:grid-cols-[1fr_0.9fr] lg:items-start">
             <div class="grid gap-4 sm:grid-cols-2">
                 {#if product.images?.length}
-                    {#each product.images as image}
-                        <img class="aspect-square w-full rounded-3xl border border-white/10 object-cover" src={image.image_url} alt={image.alt_text || product.name} />
+                    {#each product.images as image, index}
+                        <img class="aspect-square w-full rounded-3xl border border-white/10 object-cover" src={image.image_url} alt={image.alt_text || product.name} loading={index === 0 ? 'eager' : 'lazy'} fetchpriority={index === 0 ? 'high' : 'auto'} decoding="async" />
                     {/each}
                 {:else}
                     <div class="flex aspect-square items-center justify-center rounded-3xl border border-amber-200/20 bg-gradient-to-br from-stone-700 via-stone-950 to-black text-8xl text-amber-200/70 sm:col-span-2" aria-label="Product image placeholder">
