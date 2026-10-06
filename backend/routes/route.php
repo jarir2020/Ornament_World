@@ -8,6 +8,7 @@ use App\Controllers\EmailController;
 use App\Controllers\ApplicationsController;
 use App\Controllers\TestController;
 use App\Controllers\CatalogAdminController;
+use App\Controllers\CheckoutController;
 
 // Instantiate the router
 $router = isset($container) ? $container->make(\Nemesis\Router\Router::class) : new Router();
@@ -31,6 +32,7 @@ $emailController = new EmailController();
 $applicationsController = new ApplicationsController();
 $frontendController = new FrontendController();
 $catalogAdminController = new CatalogAdminController();
+$checkoutController = new CheckoutController();
 
 $router->frontendGroup('react', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/login', [$frontendController, 'login'], ['web'])->name('login.page');
@@ -45,8 +47,12 @@ $router->frontendGroup('vue', 'layouts.app', function (Router $router) use ($fro
 $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/storefront', [$frontendController, 'storefront'], ['web'])->name('storefront.home');
     $router->add('GET', '/storefront/product/{slug}', [$frontendController, 'product'], ['web'])->name('storefront.product');
+    $router->add('GET', '/checkout', [$frontendController, 'checkout'], ['web'])->name('checkout.page');
+    $router->add('GET', '/checkout/success/{reference}', [$frontendController, 'orderSuccess'], ['web'])->name('checkout.success');
     $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
 }, ['middleware' => 'web']);
+
+$router->add('POST', '/checkout/orders', [$checkoutController, 'store'], ['web'])->name('checkout.orders.store');
 
 $router->frontendGroup('server', 'layouts.app', function (Router $router) use ($frontendController, $userController): void {
     $router->add('POST', '/logout', [$userController, 'logout'], ['web'])->name('logout');

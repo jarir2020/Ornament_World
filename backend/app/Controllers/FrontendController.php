@@ -5,6 +5,7 @@ namespace App\Controllers;
 
 use App\Services\CatalogService;
 use App\Services\CatalogAdminService;
+use App\Services\CheckoutService;
 use Nemesis\Core\Controller;
 use Nemesis\Http\Request;
 
@@ -62,6 +63,31 @@ class FrontendController extends Controller
         }
 
         $this->render('home', $data);
+    }
+
+    public function checkout(Request $request): void
+    {
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['checkout'] = array_merge(
+            (new CheckoutService())->options(),
+            ['csrfToken' => function_exists('csrf_token') ? csrf_token() : '']
+        );
+
+        $this->render('checkout', $data);
+    }
+
+    public function orderSuccess(Request $request, string $reference): void
+    {
+        $order = (new CheckoutService())->success($reference);
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['orderSuccess'] = $order;
+        $data['pageProps']['orderSuccessPage'] = true;
+
+        if ($order === null) {
+            http_response_code(404);
+        }
+
+        $this->render('order-success', $data);
     }
 
     public function preview(Request $request, string $framework = 'server'): void

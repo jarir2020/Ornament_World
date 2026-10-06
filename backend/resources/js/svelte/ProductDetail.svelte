@@ -1,5 +1,7 @@
 <script>
     export let product;
+    export let onAddToCart = () => {};
+    export let onOrderNow = () => {};
 
     let selectedVariant = product?.variants?.[0] ?? null;
 
@@ -12,6 +14,19 @@
             currency: 'BDT',
             maximumFractionDigits: 0,
         }).format(Number(value || 0));
+    }
+
+    function selectedItem() {
+        return {
+            productId: product.id,
+            variantId: selectedVariant?.id ?? product.defaultVariant?.id ?? null,
+            sku: selectedVariant?.sku ?? product.defaultVariant?.sku ?? '',
+            name: product.name,
+            variantName: selectedVariant?.name ?? product.defaultVariant?.name ?? '',
+            price: selectedPrice,
+            quantity: 1,
+            imageUrl: product.imageUrl ?? null,
+        };
     }
 </script>
 
@@ -67,10 +82,15 @@
                     <span class="text-stone-300">{selectedStock > 0 ? `${selectedStock} available` : 'Currently out of stock'}</span>
                 </div>
 
-                <button class="mt-8 w-full rounded-full bg-amber-300 px-6 py-4 text-sm font-semibold text-black transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400" type="button" disabled={selectedStock < 1}>
-                    {selectedStock > 0 ? 'Add to bag' : 'Notify me when available'}
-                </button>
-                <p class="mt-4 text-center text-xs leading-6 text-stone-500">Checkout and stock revalidation will be added in Phase 3.</p>
+                <div class="mt-8 grid gap-3 sm:grid-cols-2">
+                    <button class="rounded-full bg-amber-300 px-6 py-4 text-sm font-semibold text-black transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400" type="button" disabled={selectedStock < 1} on:click={() => onAddToCart(selectedItem())}>
+                        {selectedStock > 0 ? 'Add to bag' : 'Out of stock'}
+                    </button>
+                    <button class="rounded-full border border-amber-200/50 px-6 py-4 text-sm font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-amber-200/10 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-stone-500" type="button" disabled={selectedStock < 1} on:click={() => onOrderNow(selectedItem())}>
+                        Order now
+                    </button>
+                </div>
+                <p class="mt-4 text-center text-xs leading-6 text-stone-500">Prices and availability are checked again securely when you place the order.</p>
             </div>
         </div>
     </div>

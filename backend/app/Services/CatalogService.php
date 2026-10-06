@@ -73,6 +73,27 @@ SELECT
         LIMIT 1
     ) AS variant_price,
     (
+        SELECT v.id
+        FROM product_variants v
+        WHERE v.product_id = p.id AND v.is_active = 1
+        ORDER BY v.sort_order ASC, v.id ASC
+        LIMIT 1
+    ) AS variant_id,
+    (
+        SELECT v.name
+        FROM product_variants v
+        WHERE v.product_id = p.id AND v.is_active = 1
+        ORDER BY v.sort_order ASC, v.id ASC
+        LIMIT 1
+    ) AS variant_name,
+    (
+        SELECT v.sku
+        FROM product_variants v
+        WHERE v.product_id = p.id AND v.is_active = 1
+        ORDER BY v.sort_order ASC, v.id ASC
+        LIMIT 1
+    ) AS variant_sku,
+    (
         SELECT SUM(v.stock_qty)
         FROM product_variants v
         WHERE v.product_id = p.id AND v.is_active = 1
@@ -176,6 +197,21 @@ SQL);
             ? (int) $row['variant_stock']
             : (int) ($row['stock_qty'] ?? 0);
 
+        $defaultVariant = null;
+        if (array_key_exists('variant_id', $row) && $row['variant_id'] !== null) {
+            $defaultVariant = [
+                'id' => (int) $row['variant_id'],
+                'name' => $row['variant_name'] ?? 'Standard',
+                'sku' => $row['variant_sku'] ?? '',
+            ];
+        } elseif (!empty($row['variants'][0])) {
+            $defaultVariant = [
+                'id' => (int) $row['variants'][0]['id'],
+                'name' => $row['variants'][0]['name'],
+                'sku' => $row['variants'][0]['sku'],
+            ];
+        }
+
         $presented = [
             'id' => (int) $row['id'],
             'name' => $row['name'],
@@ -195,15 +231,26 @@ SQL);
             'stockQty' => $stock,
             'inStock' => $stock > 0,
             'imageUrl' => $row['image_url'] ?? ($row['images'][0]['image_url'] ?? null),
+            'defaultVariant' => $defaultVariant,
         ];
 
         if ($detail) {
-            $presented['variants'] = array_map(static function (array $variant): array {
+            $presented['variants'] = array_map(static function (array $variant) use ($discount): array {
+                $price = (float) $variant['price'];
+                $discountedPrice = $price;
+                if ($discount !== null) {
+                    $discountedPrice = $discount['discount_type'] === 'percent'
+                        ? $price - ($price * ((float) $discount['value'] / 100))
+                        : $price - (float) $discount['value'];
+                    $discountedPrice = max(0, round($discountedPrice, 2));
+                }
+
                 return [
                     'id' => (int) $variant['id'],
                     'name' => $variant['name'],
                     'sku' => $variant['sku'],
-                    'price' => (float) $variant['price'],
+                    'price' => $discountedPrice,
+                    'originalPrice' => $price,
                     'compareAtPrice' => $variant['compare_at_price'] !== null ? (float) $variant['compare_at_price'] : null,
                     'stockQty' => (int) $variant['stock_qty'],
                     'inStock' => (int) $variant['stock_qty'] > 0,

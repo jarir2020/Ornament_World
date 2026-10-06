@@ -39,6 +39,34 @@ FROM products p
 LEFT JOIN categories c ON c.id = p.category_id
 ORDER BY p.created_at DESC, p.id DESC
 SQL);
+        $orders = Database::view(<<<'SQL'
+SELECT
+    o.id,
+    o.reference,
+    o.status,
+    o.shipment_status,
+    o.review_status,
+    o.customer_name,
+    o.customer_phone,
+    o.district,
+    o.subdistrict,
+    o.subtotal,
+    o.discount_total,
+    o.delivery_charge,
+    o.total,
+    o.risk_score,
+    o.is_suspicious,
+    o.created_at,
+    (
+        SELECT COUNT(*)
+        FROM order_items oi
+        WHERE oi.order_id = o.id
+    ) AS item_count
+FROM orders o
+WHERE o.status = 'new_order'
+ORDER BY o.created_at ASC, o.id ASC
+LIMIT 50
+SQL);
 
         return [
             'categories' => array_map(static fn (array $category): array => array_merge($category, [
@@ -55,6 +83,16 @@ SQL);
                 'is_featured' => (bool) $product['is_featured'],
                 'variant_count' => (int) $product['variant_count'],
             ]), $products),
+            'orders' => array_map(static fn (array $order): array => array_merge($order, [
+                'id' => (int) $order['id'],
+                'subtotal' => (float) $order['subtotal'],
+                'discount_total' => (float) $order['discount_total'],
+                'delivery_charge' => (float) $order['delivery_charge'],
+                'total' => (float) $order['total'],
+                'risk_score' => (int) $order['risk_score'],
+                'is_suspicious' => (bool) $order['is_suspicious'],
+                'item_count' => (int) $order['item_count'],
+            ]), $orders),
         ];
     }
 

@@ -31,7 +31,7 @@ Phase 0 verifies the planned stack and records the decisions required before fea
 | Tailwind CSS | Integrated build uses Tailwind CSS 4.3.3 with `@tailwindcss/vite` | Passed |
 | Frontend validation | `npm run build --prefix backend` passed and generated the native `public/build/.vite/manifest.json` plus Svelte assets | Passed |
 | Database | MySQL 8.4.11 accepted the supplied local credentials; empty `nemesis` database created and Nemesis migrations completed | Local development passed; production hosting pending |
-| Bangladesh locations | Supplied JSON imported into `backend/database/data`; 1,369 records, 64 districts, and 479 district/subdistrict pairs validated | Passed |
+| Bangladesh locations | Supplied JSON contains 1,369 raw records; the Phase 3 migration imports 1,330 unique rows covering 64 districts and validates the duplicate-tolerant source | Passed |
 | Pathao integration | Official Pathao material confirms merchant Developer API integration, system credentials, and webhooks | Provider capability confirmed; account details pending |
 | Dependency security | Initial audit found 13 advisories; scoped updates moved Guzzle to 7.15.5, PSR-7 to 2.13.1, Flysystem to 3.36.0, and JMESPath to 2.9.2 | Audit now reports no advisories |
 | Frontend dependency security | `npm audit` reports zero info, low, moderate, high, or critical vulnerabilities | Passed |
@@ -66,7 +66,7 @@ No Pathao credentials were present in the local environment, and none were reque
 
 The imported dataset is from [jarir-in-atl/BangladeshLocations](https://github.com/jarir-in-atl/BangladeshLocations/blob/main/bangladesh_locations.json). It currently provides `district`, `subdistrict`, `postoffice`, and `postcode` records. The checkout model should preserve the source spelling while allowing a future curated alias layer if courier or customer-facing naming needs differ.
 
-The data is stored in `backend/database/data/bangladesh_locations.json` and is not yet connected to a checkout form or database seeder.
+The data is stored in `backend/database/data/bangladesh_locations.json` and is now imported by the Phase 3 checkout migration into `bangladesh_locations`. Duplicate source rows are ignored by the unique database key while all 64 districts are required.
 
 ## Phase 0 blockers and decisions
 
@@ -109,3 +109,7 @@ Phase 1 remains in progress until the setup/CI contract and the complete admin a
 ## Phase 2 started locally
 
 The first catalog slice is now implemented inside `backend/`; see [phase-2-catalog.md](phase-2-catalog.md) for the scoped details and evidence. Phase 2 is in progress, not complete.
+
+## Phase 3 started locally
+
+The first cart and guest-checkout slice is now implemented inside `backend/`; see [phase-3-checkout.md](phase-3-checkout.md) for the scoped details and evidence. Phase 3 is in progress, not complete.

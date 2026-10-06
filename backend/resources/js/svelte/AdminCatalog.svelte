@@ -1,5 +1,5 @@
 <script>
-    export let admin = { categories: [], products: [], csrfToken: '' };
+    export let admin = { categories: [], products: [], orders: [], csrfToken: '' };
 
     let message = '';
     let error = '';
@@ -97,6 +97,33 @@
 
         {#if message}<div class="mt-6 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</div>{/if}
         {#if error}<div class="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div>{/if}
+
+        <section class="mt-8 overflow-hidden rounded-2xl border border-amber-200/20 bg-amber-200/[0.04]">
+            <div class="flex flex-col justify-between gap-2 border-b border-white/10 px-5 py-4 sm:flex-row sm:items-center">
+                <div><h2 class="font-medium text-white">New order queue</h2><p class="mt-1 text-xs text-stone-500">Review customer details and call before confirmation or shipment.</p></div>
+                <span class="text-sm text-amber-200">{admin.orders?.length ?? 0} waiting</span>
+            </div>
+            {#if admin.orders?.length}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="bg-white/[0.03] text-xs uppercase tracking-[0.15em] text-stone-500"><tr><th class="px-5 py-3">Order</th><th class="px-5 py-3">Customer</th><th class="px-5 py-3">Delivery</th><th class="px-5 py-3">Total</th><th class="px-5 py-3">Review</th></tr></thead>
+                        <tbody class="divide-y divide-white/10">
+                            {#each admin.orders as order}
+                                <tr>
+                                    <td class="px-5 py-4"><div class="font-medium text-amber-200">{order.reference}</div><div class="mt-1 text-xs text-stone-500">{order.item_count} {order.item_count === 1 ? 'item' : 'items'} · {order.created_at}</div></td>
+                                    <td class="px-5 py-4"><div class="font-medium text-white">{order.customer_name}</div><div class="mt-1 text-xs text-stone-400">{order.customer_phone}</div></td>
+                                    <td class="px-5 py-4 text-stone-300">{order.subdistrict}, {order.district}</td>
+                                    <td class="px-5 py-4 text-amber-200">{formatPrice(order.total)}</td>
+                                    <td class="px-5 py-4">{#if order.is_suspicious}<span class="rounded-full bg-rose-300/15 px-2 py-1 text-xs text-rose-200">Flagged · {order.risk_score}</span>{:else}<span class="text-xs text-emerald-300">No flags</span>{/if}</td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+            {:else}
+                <p class="px-5 py-7 text-sm text-stone-500">No new guest orders are waiting for review.</p>
+            {/if}
+        </section>
 
         <section class="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
             <div class="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">

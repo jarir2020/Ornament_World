@@ -4,7 +4,7 @@
 
 Ornament World is a planned premium men's jewellery e-commerce platform for the Bangladesh market. Its product principle is: "Luxury look, simple shopping."
 
-The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, and an in-progress Phase 2 catalog read path. Checkout, admin catalog CRUD, and Pathao business features are not complete yet.
+The repository now contains the initial Nemesis application, integrated Svelte/Vite/Tailwind foundation, the Phase 2 catalog/admin slice, and an in-progress Phase 3 cart/guest-checkout slice. Full order operations, admin catalog editing/images, phone confirmation, and Pathao business features are not complete yet.
 
 ## Source of truth
 
@@ -28,6 +28,8 @@ The repository now contains the initial Nemesis application, integrated Svelte/V
 - Required checkout data includes name, normalized Bangladesh phone, complete address, district, and area/thana/upazila.
 - Delivery fees start as configurable rules: ৳60 inside Dhaka and ৳120 outside Dhaka.
 - Orders are phone-confirmed before shipment.
+- Checkout imports and validates the committed Bangladesh location source on the server.
+- Order totals, active catalog state, discounts, stock, and delivery charge are recalculated in a transaction.
 
 ## Planned operational workflow
 
