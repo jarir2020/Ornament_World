@@ -23,6 +23,7 @@ The repository now contains the initial Nemesis application, integrated Svelte/V
 ## Planned user experience
 
 - Mobile-first premium black, gold, and white storefront.
+- Persistent dark/light theme toggle shared by storefront, accounts, and admin screens.
 - Customers can browse products and use guest checkout without an account.
 - Customers may optionally register, sign in, edit their profile, and review orders linked after sign-in.
 - Purchase paths are `Order Now` or `Add to Cart` followed by guest checkout.

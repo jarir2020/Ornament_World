@@ -7,6 +7,7 @@ Premium men's jewellery e-commerce platform for Bangladesh.
 Ornaments World is being planned around:
 
 - Premium black, gold, and white branding.
+- Persistent dark/light theme toggle with a readable light palette.
 - Mobile-first product browsing.
 - Simple guest checkout through **Order Now** or **Add to Cart**.
 - Bangladesh district and address validation.

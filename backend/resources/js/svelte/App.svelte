@@ -14,6 +14,7 @@
 
     let cart = [];
     let showCart = false;
+    let theme = 'dark';
 
     $: brand = page.brand ?? 'Ornaments World';
     $: categories = page.categories ?? [];
@@ -23,6 +24,10 @@
     $: cartCount = cart.reduce((count, item) => count + Number(item.quantity || 0), 0);
 
     onMount(() => {
+        const storedTheme = localStorage.getItem('ornaments_theme');
+        theme = storedTheme === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+
         try {
             cart = JSON.parse(sessionStorage.getItem('ornaments_cart') || '[]');
         } catch (storageError) {
@@ -33,6 +38,12 @@
         window.addEventListener('ornaments:logout', logoutListener);
         return () => window.removeEventListener('ornaments:logout', logoutListener);
     });
+
+    function toggleTheme() {
+        theme = theme === 'light' ? 'dark' : 'light';
+        localStorage.setItem('ornaments_theme', theme);
+        document.documentElement.dataset.theme = theme;
+    }
 
     async function logout() {
         try {
@@ -124,6 +135,12 @@
     <title>{page.authPage === 'register' ? `Create account | ${brand}` : page.authPage === 'login' ? `Sign in | ${brand}` : page.profilePage ? `My profile | ${brand}` : page.notFound || page.notFoundPage ? `Page not found | ${brand}` : page.product ? `${page.product.name} | ${brand}` : page.help ? `${page.help.title} | ${brand}` : `${brand} | Men's jewellery`}</title>
     <meta name="description" content={page.product?.shortDescription ?? 'Refined men\'s jewellery from Ornaments World.'} />
 </svelte:head>
+
+<div class="theme-shell" data-theme={theme}>
+    <button class="theme-toggle fixed right-4 top-4 z-50 rounded-full border px-4 py-2 text-xs font-semibold shadow-lg transition sm:right-6 sm:top-6" type="button" on:click={toggleTheme} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+        <span aria-hidden="true">{theme === 'light' ? '☾' : '☼'}</span>
+        <span class="ml-2">{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
+    </button>
 
 {#if page.notFound}
     <main class="grid min-h-screen place-items-center bg-[#080808] px-6 text-center text-stone-100">
@@ -312,7 +329,7 @@
     </footer>
 
     {#if showCart}
-        <div class="fixed inset-0 z-20 bg-black/70" role="presentation" on:click={() => showCart = false}></div>
+        <div class="theme-scrim fixed inset-0 z-20 bg-black/70" role="presentation" on:click={() => showCart = false}></div>
         <aside class="fixed inset-y-0 right-0 z-30 flex w-full max-w-md flex-col border-l border-white/10 bg-[#101010] p-6 text-stone-100 shadow-2xl" aria-label="Shopping bag">
             <div class="flex items-center justify-between border-b border-white/10 pb-5">
                 <div><p class="text-xs font-semibold uppercase tracking-[0.25em] text-amber-300">Your bag</p><h2 class="mt-2 text-2xl font-semibold text-white">{cartCount} {cartCount === 1 ? 'piece' : 'pieces'}</h2></div>
@@ -335,3 +352,4 @@
     {/if}
 </div>
 {/if}
+</div>

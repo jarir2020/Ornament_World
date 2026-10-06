@@ -33,6 +33,143 @@ body {
     background: #080808;
 }
 
+/*
+ * Ornaments World theme layer. Existing screens intentionally use a compact
+ * set of Tailwind utility colors; these scoped remaps keep the light theme
+ * consistent without duplicating every page component.
+ */
+html[data-theme='light'],
+html[data-theme='light'] body {
+    color-scheme: light;
+    background: #f5f7fb;
+}
+
+.theme-toggle {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(8, 8, 8, 0.82);
+    color: #fef3c7;
+    backdrop-filter: blur(12px);
+}
+
+.theme-toggle:hover {
+    border-color: rgba(252, 211, 77, 0.75);
+}
+
+[data-theme='light'] .theme-toggle {
+    border-color: rgba(120, 84, 20, 0.25);
+    background: rgba(255, 255, 255, 0.92);
+    color: #7a4d00;
+}
+
+[data-theme='light'] .theme-scrim {
+    background-color: rgba(15, 23, 42, 0.5) !important;
+}
+
+[data-theme='light'] [class~='bg-[#080808]'] {
+    background-color: #f5f7fb !important;
+}
+
+[data-theme='light'] [class~='bg-[#101010]'],
+[data-theme='light'] [class~='bg-[#111111]'],
+[data-theme='light'] [class~='bg-[#151515]'] {
+    background-color: #ffffff !important;
+}
+
+[data-theme='light'] [class~='bg-white/[0.03]'],
+[data-theme='light'] [class~='bg-white/[0.04]'],
+[data-theme='light'] [class~='bg-white/[0.05]'] {
+    background-color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme='light'] [class~='bg-black/20'],
+[data-theme='light'] [class~='bg-black/30'] {
+    background-color: rgba(15, 23, 42, 0.045) !important;
+}
+
+[data-theme='light'] [class~='bg-black/70'] {
+    background-color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme='light'] [class~='bg-amber-200/[0.04]'] {
+    background-color: #fffaf0 !important;
+}
+
+[data-theme='light'] [class~='bg-sky-200/[0.04]'] {
+    background-color: #f0f9ff !important;
+}
+
+[data-theme='light'] [class~='bg-rose-300/[0.05]'] {
+    background-color: #fff1f2 !important;
+}
+
+[data-theme='light'] [class*='bg-gradient-to-br'] {
+    background-image: linear-gradient(135deg, #fff7ed, #e2e8f0) !important;
+}
+
+[data-theme='light'] [class~='text-white'],
+[data-theme='light'] [class~='text-stone-100'] {
+    color: #172033 !important;
+}
+
+[data-theme='light'] [class~='text-stone-200'] {
+    color: #263449 !important;
+}
+
+[data-theme='light'] [class~='text-stone-300'] {
+    color: #3f4c60 !important;
+}
+
+[data-theme='light'] [class~='text-stone-400'] {
+    color: #536174 !important;
+}
+
+[data-theme='light'] [class~='text-stone-500'] {
+    color: #6b778c !important;
+}
+
+[data-theme='light'] [class~='text-stone-600'] {
+    color: #7c8797 !important;
+}
+
+[data-theme='light'] [class~='text-amber-100'],
+[data-theme='light'] [class~='text-amber-200'],
+[data-theme='light'] [class~='text-amber-300'] {
+    color: #8a5a00 !important;
+}
+
+[data-theme='light'] [class~='text-emerald-300'] {
+    color: #087443 !important;
+}
+
+[data-theme='light'] [class~='text-sky-100'],
+[data-theme='light'] [class~='text-sky-200'] {
+    color: #0369a1 !important;
+}
+
+[data-theme='light'] [class~='text-rose-100'],
+[data-theme='light'] [class~='text-rose-200'] {
+    color: #be123c !important;
+}
+
+[data-theme='light'] [class~='border-white/10'],
+[data-theme='light'] [class~='border-white/15'],
+[data-theme='light'] [class~='border-white/20'] {
+    border-color: rgba(15, 23, 42, 0.13) !important;
+}
+
+[data-theme='light'] [class~='divide-white/10'] > :not(:last-child) {
+    border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+[data-theme='light'] [class~='hover:text-amber-100']:hover,
+[data-theme='light'] [class~='hover:text-amber-200']:hover {
+    color: #6f4700 !important;
+}
+
+[data-theme='light'] [class~='placeholder:text-stone-500']::placeholder {
+    color: #7c8797 !important;
+}
+
 img,
 video {
     max-width: 100%;
