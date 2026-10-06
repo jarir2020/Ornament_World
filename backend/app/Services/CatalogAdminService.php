@@ -22,13 +22,17 @@ final class CatalogAdminService
         $products = Database::view(<<<'SQL'
 SELECT
     p.id,
+    p.category_id,
     p.name,
     p.slug,
+    p.short_description,
+    p.description,
     p.base_price,
     p.compare_at_price,
     p.stock_qty,
     p.is_active,
     p.is_featured,
+    p.sort_order,
     c.name AS category_name,
     (
         SELECT COUNT(*)

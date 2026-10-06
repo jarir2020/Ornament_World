@@ -1,11 +1,19 @@
 <?php
 
-use Nemesis\Database\Seeder;
-use Nemesis\Core\Database;
+declare(strict_types=1);
 
-class UserSeeder extends Seeder {
-    public function run() {
-        Database::connect()->exec("INSERT INTO users (username, email, password) VALUES ('jarir_test', 'test@nemesis.com', 'password123')");
-        Database::connect()->exec("INSERT INTO users (username, email, password) VALUES ('nemesis_dev', 'dev@nemesis.com', 'secret')");
+use Nemesis\Database\Seeder;
+
+/**
+ * Keep the framework's conventional seeder name without shipping plaintext
+ * sample credentials. Provision an admin only from deployment environment
+ * variables through AdminUserSeeder.
+ */
+class UserSeeder extends Seeder
+{
+    public function run(): void
+    {
+        require_once __DIR__ . '/AdminUserSeeder.php';
+        (new AdminUserSeeder())->run();
     }
 }

@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Http\Middleware\AdminAuthenticate;
 use Nemesis\Http\Middleware\ApiKeyAuthenticate;
 use Nemesis\Http\Middleware\ApiVersionMiddleware;
 use Nemesis\Http\Middleware\Authenticate;
@@ -63,6 +64,7 @@ class Kernel
      * @var array<string, class-string>
      */
     protected array $routeMiddleware = [
+        'admin'       => AdminAuthenticate::class,
         'throttle'    => ThrottleRequests::class,
         'csrf'        => VerifyCsrfToken::class,
         'session'     => StartSession::class,

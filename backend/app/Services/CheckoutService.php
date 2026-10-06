@@ -69,6 +69,17 @@ SQL));
 
     public function createOrder(array $input): array
     {
+        $idempotencyKey = $this->validatedIdempotencyKey($input['idempotency_key'] ?? $input['idempotencyKey'] ?? null);
+        if ($idempotencyKey !== null) {
+            $existing = Database::view(
+                'SELECT reference FROM orders WHERE idempotency_key = :idempotency_key LIMIT 1',
+                ['idempotency_key' => $idempotencyKey]
+            );
+            if ($existing !== []) {
+                return $this->success((string) $existing[0]['reference']) ?? throw new \RuntimeException('Existing idempotent order could not be loaded.');
+            }
+        }
+
         $customer = $this->validatedCustomer($input);
         $items = $this->validatedItems($input['items'] ?? null);
         $location = $this->validatedLocation($customer['district'], $customer['subdistrict'], $customer['postoffice']);
@@ -141,16 +152,17 @@ SQL, ['district' => $location['district']]);
 
             $order = $db->prepare(<<<'SQL'
 INSERT INTO orders
-    (reference, status, shipment_status, review_status, customer_name, customer_phone, customer_email,
+    (reference, idempotency_key, status, shipment_status, review_status, customer_name, customer_phone, customer_email,
      delivery_address, district, subdistrict, postoffice, postcode, address_hash, delivery_zone_slug,
      subtotal, discount_total, delivery_charge, total, risk_score, is_suspicious)
 VALUES
-    (:reference, 'new_order', 'not_ready', 'pending', :customer_name, :customer_phone, :customer_email,
+    (:reference, :idempotency_key, 'new_order', 'not_ready', 'pending', :customer_name, :customer_phone, :customer_email,
      :delivery_address, :district, :subdistrict, :postoffice, :postcode, :address_hash, :delivery_zone_slug,
      :subtotal, :discount_total, :delivery_charge, :total, :risk_score, :is_suspicious)
 SQL);
             $order->execute([
                 'reference' => $reference,
+                'idempotency_key' => $idempotencyKey,
                 'customer_name' => $customer['name'],
                 'customer_phone' => $customer['phone'],
                 'customer_email' => $customer['email'],
@@ -225,6 +237,15 @@ SQL);
         } catch (\Throwable $error) {
             if ($db->inTransaction()) {
                 $db->rollBack();
+            }
+            if ($idempotencyKey !== null && $error instanceof \PDOException && $error->getCode() === '23000') {
+                $existing = Database::view(
+                    'SELECT reference FROM orders WHERE idempotency_key = :idempotency_key LIMIT 1',
+                    ['idempotency_key' => $idempotencyKey]
+                );
+                if ($existing !== []) {
+                    return $this->success((string) $existing[0]['reference']) ?? throw new \RuntimeException('Existing idempotent order could not be loaded.');
+                }
             }
             throw $error;
         }
@@ -313,6 +334,21 @@ SQL, ['reference' => $reference]);
             'subdistrict' => $subdistrict,
             'postoffice' => $postoffice,
         ];
+    }
+
+    private function validatedIdempotencyKey(mixed $input): ?string
+    {
+        if ($input === null || trim((string) $input) === '') {
+            return null;
+        }
+
+        $key = trim((string) $input);
+        if (!preg_match('/^[A-Za-z0-9_-]{16,128}$/', $key)) {
+            throw new \InvalidArgumentException('Checkout retry key is invalid. Please refresh and try again.');
+        }
+
+        // Store only a digest; the browser keeps the opaque retry key.
+        return hash('sha256', $key);
     }
 
     /** @return array<int, array{product_id: int, variant_id: ?int, quantity: int}> */

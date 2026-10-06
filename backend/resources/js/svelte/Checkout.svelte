@@ -14,6 +14,7 @@
     let postoffice = '';
     let error = '';
     let submitting = false;
+    let idempotencyKey = '';
 
     $: districtData = checkout.locations?.find((item) => item.name === district) ?? null;
     $: subdistrictData = districtData?.subdistricts?.find((item) => item.name === subdistrict) ?? null;
@@ -25,6 +26,8 @@
     onMount(() => {
         try {
             items = JSON.parse(sessionStorage.getItem('ornaments_checkout_items') || '[]');
+            idempotencyKey = sessionStorage.getItem('ornaments_checkout_key') || createRetryKey();
+            sessionStorage.setItem('ornaments_checkout_key', idempotencyKey);
             if (items.length) {
                 trackEvent('begin_checkout', {
                     currency: 'BDT',
@@ -66,11 +69,25 @@
             ? { ...item, quantity: Math.max(1, Math.min(10, item.quantity + delta)) }
             : item);
         sessionStorage.setItem('ornaments_checkout_items', JSON.stringify(items));
+        resetRetryKey();
     }
 
     function removeItem(index) {
         items = items.filter((_, itemIndex) => itemIndex !== index);
         sessionStorage.setItem('ornaments_checkout_items', JSON.stringify(items));
+        resetRetryKey();
+    }
+
+    function createRetryKey() {
+        if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+        const bytes = new Uint8Array(16);
+        globalThis.crypto?.getRandomValues?.(bytes);
+        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('') || `${Date.now()}-${Math.random()}`;
+    }
+
+    function resetRetryKey() {
+        idempotencyKey = createRetryKey();
+        sessionStorage.setItem('ornaments_checkout_key', idempotencyKey);
     }
 
     async function submitOrder() {
@@ -94,6 +111,7 @@
                     district,
                     subdistrict,
                     postoffice,
+                    idempotency_key: idempotencyKey,
                     items: items.map((item) => ({
                         product_id: item.productId,
                         variant_id: item.variantId || null,
@@ -107,6 +125,7 @@
             }
 
             sessionStorage.removeItem('ornaments_checkout_items');
+            sessionStorage.removeItem('ornaments_checkout_key');
             window.location.assign(`/checkout/success/${encodeURIComponent(payload.data.reference)}`);
         } catch (submitError) {
             error = submitError.message || 'We could not place the order right now.';

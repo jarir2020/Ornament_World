@@ -6,6 +6,8 @@
 
     let message = '';
     let error = '';
+    let editingProductId = null;
+    let editingProduct = {};
     let product = {
         name: '',
         slug: '',
@@ -68,6 +70,38 @@
     async function toggleProduct(item) {
         try {
             await request(`/admin/catalog/products/${item.id}/active`, 'POST', { active: !Boolean(item.is_active) });
+            window.location.reload();
+        } catch (actionError) {
+            error = actionError.message;
+        }
+    }
+
+    function beginEdit(item) {
+        editingProductId = item.id;
+        editingProduct = {
+            category_id: item.category_id,
+            name: item.name,
+            slug: item.slug,
+            short_description: item.short_description || '',
+            description: item.description || '',
+            base_price: item.base_price,
+            compare_at_price: item.compare_at_price ?? '',
+            stock_qty: item.stock_qty,
+            is_active: Boolean(item.is_active),
+            is_featured: Boolean(item.is_featured),
+            sort_order: item.sort_order,
+        };
+    }
+
+    function cancelEdit() {
+        editingProductId = null;
+        editingProduct = {};
+    }
+
+    async function saveProduct() {
+        try {
+            await request(`/admin/catalog/products/${editingProductId}`, 'PUT', editingProduct);
+            message = 'Product updated.';
             window.location.reload();
         } catch (actionError) {
             error = actionError.message;
@@ -139,8 +173,25 @@
                                     <td class="px-5 py-4 text-amber-200">{formatPrice(item.base_price)}</td>
                                     <td class="px-5 py-4 text-stone-300">{item.stock_qty}</td>
                                     <td class="px-5 py-4"><span class={`rounded-full px-2 py-1 text-xs ${item.is_active ? 'bg-emerald-400/15 text-emerald-300' : 'bg-stone-700 text-stone-400'}`}>{item.is_active ? 'Active' : 'Inactive'}</span></td>
-                                    <td class="px-5 py-4 text-right"><button class="text-xs text-amber-300 hover:text-amber-100" type="button" on:click={() => toggleProduct(item)}>{item.is_active ? 'Deactivate' : 'Activate'}</button></td>
+                                    <td class="px-5 py-4 text-right"><div class="flex justify-end gap-3"><button class="text-xs text-amber-300 hover:text-amber-100" type="button" on:click={() => beginEdit(item)}>Edit</button><button class="text-xs text-amber-300 hover:text-amber-100" type="button" on:click={() => toggleProduct(item)}>{item.is_active ? 'Deactivate' : 'Activate'}</button></div></td>
                                 </tr>
+                                {#if editingProductId === item.id}
+                                    <tr class="bg-amber-200/[0.03]"><td colspan="6" class="px-5 py-5">
+                                        <form class="grid gap-3 sm:grid-cols-2" on:submit|preventDefault={saveProduct}>
+                                            <input bind:value={editingProduct.name} required placeholder="Product name" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300" />
+                                            <input bind:value={editingProduct.slug} required placeholder="Slug" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300" />
+                                            <select bind:value={editingProduct.category_id} required class="rounded-xl border border-white/10 bg-[#151515] px-4 py-3 text-sm text-white outline-none focus:border-amber-300">{#each admin.categories as categoryOption}<option value={categoryOption.id}>{categoryOption.name}</option>{/each}</select>
+                                            <div class="grid grid-cols-2 gap-3"><input bind:value={editingProduct.base_price} required type="number" min="0" step="0.01" placeholder="Price (BDT)" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300" /><input bind:value={editingProduct.stock_qty} required type="number" min="0" step="1" placeholder="Stock" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300" /></div>
+                                            <input bind:value={editingProduct.compare_at_price} type="number" min="0" step="0.01" placeholder="Compare-at price (optional)" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300" />
+                                            <input bind:value={editingProduct.sort_order} type="number" min="0" step="1" placeholder="Sort order" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300" />
+                                            <textarea bind:value={editingProduct.short_description} rows="2" placeholder="Short description" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300 sm:col-span-2"></textarea>
+                                            <textarea bind:value={editingProduct.description} rows="3" placeholder="Description" class="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-amber-300 sm:col-span-2"></textarea>
+                                            <label class="flex items-center gap-2 text-sm text-stone-300"><input bind:checked={editingProduct.is_active} type="checkbox" /> Active</label>
+                                            <label class="flex items-center gap-2 text-sm text-stone-300"><input bind:checked={editingProduct.is_featured} type="checkbox" /> Featured</label>
+                                            <div class="flex flex-wrap gap-3 sm:col-span-2"><button class="rounded-full bg-amber-300 px-5 py-2 text-sm font-semibold text-black hover:bg-amber-200" type="submit">Save product</button><button class="rounded-full border border-white/20 px-5 py-2 text-sm text-stone-300 hover:border-amber-200" type="button" on:click={cancelEdit}>Cancel</button></div>
+                                        </form>
+                                    </td></tr>
+                                {/if}
                             {/each}
                         </tbody>
                     </table>

@@ -56,8 +56,8 @@ $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($
     $router->add('GET', '/checkout', [$frontendController, 'checkout'], ['web'])->name('checkout.page');
     $router->add('GET', '/checkout/success/{reference}', [$frontendController, 'orderSuccess'], ['web'])->name('checkout.success');
     $router->add('GET', '/help/{slug}', [$frontendController, 'help'], ['web'])->name('help.page');
-    $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
-    $router->add('GET', '/admin/orders/{reference}', [$frontendController, 'adminOrder'], ['auth:admin'])->name('admin.orders.show');
+    $router->add('GET', '/admin', [$frontendController, 'admin'], ['admin'])->name('admin.dashboard');
+    $router->add('GET', '/admin/orders/{reference}', [$frontendController, 'adminOrder'], ['admin'])->name('admin.orders.show');
 }, ['middleware' => 'web']);
 
 $router->add('POST', '/checkout/orders', [$checkoutController, 'store'], ['web'])->name('checkout.orders.store');
@@ -68,7 +68,7 @@ $router->frontendGroup('server', 'layouts.app', function (Router $router) use ($
     $router->add('POST', '/logout', [$userController, 'logout'], ['web'])->name('logout');
 }, ['middleware' => 'web']);
 
-$router->group(['middleware' => ['auth:admin', 'web']], function (Router $router) use ($catalogAdminController, $orderAdminController, $shipmentAdminController): void {
+$router->group(['middleware' => ['web', 'admin']], function (Router $router) use ($catalogAdminController, $orderAdminController, $shipmentAdminController): void {
     $router->add('POST', '/admin/catalog/categories', [$catalogAdminController, 'storeCategory'])->name('admin.catalog.categories.store');
     $router->add('POST', '/admin/catalog/products', [$catalogAdminController, 'storeProduct'])->name('admin.catalog.products.store');
     $router->add('PUT', '/admin/catalog/products/{id}', [$catalogAdminController, 'updateProduct'])->name('admin.catalog.products.update');

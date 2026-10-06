@@ -20,7 +20,7 @@ The guiding principle is **Luxury look, simple shopping.**
 
 ## Status
 
-The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, the Phase 5 shipment slice, and the in-progress Phase 6 SEO/analytics slice. Feature implementation proceeds phase by phase according to [plan-final.md](plan-final.md).
+The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, the Phase 4 order-operations slice, the Phase 5 shipment slice, the Phase 6 SEO/analytics foundation, and the Phase 7 local release gate. Deployment and live verification remain pending. Feature implementation proceeds phase by phase according to [plan-final.md](plan-final.md).
 
 ## Documentation
 
@@ -32,6 +32,7 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 - [Phase 4 order operations progress](phase-4-order-operations.md)
 - [Phase 5 Pathao shipment progress](phase-5-pathao.md)
 - [Phase 6 SEO, analytics, and performance progress](phase-6-seo-analytics.md)
+- [Phase 7 QA and launch record](phase-7-qa-launch.md)
 - [Framework fixes](Framework_Fixes.md)
 - [Agent and contributor guidance](AGENTS.md)
 - [LLM project context](llms.txt)
@@ -44,6 +45,7 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 - `backend/database/migrations/2026_10_06_010000_create_checkout_tables.php` — Phase 3 locations, delivery, orders, history, and fraud schema.
 - `backend/database/migrations/2026_10_06_020000_create_order_operations.php` — Phase 4 status, review, and stock-release fields.
 - `backend/database/migrations/2026_10_06_030000_create_shipments.php` — Phase 5 shipment and sanitized-attempt audit tables.
+- `backend/database/migrations/2026_10_06_040000_add_checkout_idempotency.php` — Phase 7 duplicate-submit protection.
 - `backend/public/router.php` — local PHP-server bridge so extension routes reach Nemesis while real assets remain static.
 - `backend/database/seeders/CatalogSeeder.php` — repeatable local demo catalog seed.
 
@@ -71,7 +73,7 @@ Svelte props will be used for parent-to-child component data flow. Nemesis contr
 
 ## Development
 
-The initial Nemesis and integrated Svelte foundations are now created, and Phase 6 SEO/analytics work is in progress. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
+The initial Nemesis and integrated Svelte foundations are now created, and the local Phase 7 release gate is in progress. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
 
 Backend setup:
 
@@ -80,6 +82,9 @@ cd backend
 composer install
 php bin/nemesis migrate:status
 php bin/nemesis db:seed CatalogSeeder
+# For an authorized non-production or production staff account, set
+# ADMIN_EMAIL, ADMIN_PASSWORD, and optionally ADMIN_USERNAME in the environment,
+# then run: php bin/nemesis db:seed AdminUserSeeder
 ```
 
 Integrated Svelte/Vite setup:

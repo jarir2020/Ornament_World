@@ -1,15 +1,18 @@
 <?php
 namespace App\Controllers;
 
+use App\Services\AdminAuthService;
 use App\Models\User;
 use JarirAhmed\AuthTokenMaker\AuthTokenMaker;
 use Nemesis\Core\Controller;
 use Nemesis\Core\Validator;
 use JarirAhmed\HTTPResponse\HTTPResponse;
 use JarirAhmed\TimeHelper\TimeHelper;
+use Nemesis\Auth\JWT;
 use Nemesis\Helpers\Helpers;
 use Nemesis\Http\Request;
 use Nemesis\Http\Response;
+use Nemesis\Http\Session;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -28,43 +31,33 @@ class UserController {
             return;
         }
 
-        // Get user by email
-        $userData = $this->findUserByEmail($data['email']);
+        $auth = (new AdminAuthService())->authenticate(
+            (string) $data['email'],
+            (string) $data['password']
+        );
 
-        if (!$userData) {
-            HTTPResponse::unauthorized();
-            Helpers::json([
+        if ($auth === null) {
+            $accept = strtolower((string) $request->header('Accept', ''));
+            if (str_contains($accept, 'text/html') || $accept === '') {
+                return Response::redirect('/login?error=invalid_credentials');
+            }
+
+            return Response::json([
                 'error' => true,
-                'message' => 'Invalid email or password.'
-            ]);
-            return;
+                'message' => 'Invalid email or password.',
+            ], 401);
         }
 
-        // Verify password
-        if (!Helpers::passwordVerify($data['password'], $userData['password'])) {
-            HTTPResponse::unauthorized();
-            Helpers::json([
-                'error' => true,
-                'message' => 'Invalid email or password.'
-            ]);
-            return;
+        // Regenerate the browser session after credential verification to
+        // prevent session fixation before storing the minimal auth context.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
         }
+        Session::set('auth', $auth);
 
-        // Generate auth token
-        $authToken = $this->generateAuthToken();
+        $authToken = JWT::encode($auth);
 
-        // Update auth token in the database
-        $updateResult = $this->persistAuthToken($userData['id'], $authToken);
-        if (!$updateResult) {
-            HTTPResponse::internalServerError();
-            Helpers::json([
-                'error' => true,
-                'message' => 'Failed to update auth token.'
-            ]);
-            return;
-        }
-
-        $dashboardUrl = function_exists('route') ? route('dashboard.page') : '/dashboard';
+        $dashboardUrl = ($auth['role'] ?? '') === 'admin' ? '/admin' : '/dashboard';
         if ($dashboardUrl === '#' || $dashboardUrl === '') {
             $dashboardUrl = '/dashboard';
         }
@@ -83,8 +76,9 @@ class UserController {
             'auth_token' => $authToken,
             'redirect_to' => $dashboardUrl,
             'user' => [
-                'id' => $userData['id'],
-                'email' => $userData['email']
+                'id' => $auth['sub'],
+                'email' => $auth['email'],
+                'role' => $auth['role'],
             ]
         ]);
     }
@@ -112,6 +106,11 @@ class UserController {
 
 
     public function logout() {
+        Session::remove('auth');
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+
         Helpers::json([
             'success' => true,
             'message' => 'Logout successful.'

@@ -72,11 +72,13 @@
 
     function orderNow(item) {
         sessionStorage.setItem('ornaments_checkout_items', JSON.stringify([item]));
+        sessionStorage.removeItem('ornaments_checkout_key');
         window.location.assign('/checkout');
     }
 
     function checkoutCart() {
         sessionStorage.setItem('ornaments_checkout_items', JSON.stringify(cart));
+        sessionStorage.removeItem('ornaments_checkout_key');
         window.location.assign('/checkout');
     }
 
