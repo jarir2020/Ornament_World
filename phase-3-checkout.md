@@ -40,6 +40,6 @@ Normal checkout page data is provided through Nemesis controller/view props. The
 
 - Add focused automated tests for phone normalization, location validation, delivery rules, discount math, stock races, duplicate flags, and transactional rollback.
 - Complete browser-level checkout testing across narrow mobile and desktop layouts, including refresh/back-button and repeated-submit behavior.
-- Add protected admin order detail and status actions in Phase 4; the current queue is read-only.
-- Add stock reservation/release behavior with cancellation handling in Phase 4.
 - Complete the browser admin authentication/session flow.
+
+Phase 4 has since added the protected order detail, status, fraud-review, history, filtering, and stock-release operations; the Phase 4 progress document records that work separately.

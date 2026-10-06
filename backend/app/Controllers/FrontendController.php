@@ -6,6 +6,7 @@ namespace App\Controllers;
 use App\Services\CatalogService;
 use App\Services\CatalogAdminService;
 use App\Services\CheckoutService;
+use App\Services\OrderAdminService;
 use Nemesis\Core\Controller;
 use Nemesis\Http\Request;
 
@@ -21,8 +22,30 @@ class FrontendController extends Controller
         $data = $this->pageData($request, 'svelte');
         $data['pageProps']['admin'] = (new CatalogAdminService())->snapshot();
         $data['pageProps']['admin']['csrfToken'] = function_exists('csrf_token') ? csrf_token() : '';
+        $data['pageProps']['admin']['orderDashboard'] = (new OrderAdminService())->dashboard(
+            trim((string) $request->query('search', '')),
+            trim((string) $request->query('status', ''))
+        );
+        $data['pageProps']['admin']['orderFilters'] = [
+            'search' => trim((string) $request->query('search', '')),
+            'status' => trim((string) $request->query('status', '')),
+        ];
 
         $this->render('admin', $data);
+    }
+
+    public function adminOrder(Request $request, string $reference): void
+    {
+        $data = $this->pageData($request, 'svelte');
+        $data['pageProps']['adminOrder'] = (new OrderAdminService())->detail($reference);
+        $data['pageProps']['adminOrderPage'] = true;
+        $data['pageProps']['adminOrderCsrfToken'] = function_exists('csrf_token') ? csrf_token() : '';
+
+        if ($data['pageProps']['adminOrder'] === null) {
+            http_response_code(404);
+        }
+
+        $this->render('admin-order', $data);
     }
 
     public function profile(Request $request): void

@@ -1,6 +1,7 @@
 <script>
     import { onMount } from 'svelte';
     import Checkout from './Checkout.svelte';
+    import AdminOrderDetail from './AdminOrderDetail.svelte';
     import ProductDetail from './ProductDetail.svelte';
     import AdminCatalog from './AdminCatalog.svelte';
     import OrderSuccess from './OrderSuccess.svelte';
@@ -106,6 +107,8 @@
     <Checkout checkout={page.checkout} />
 {:else if page.orderSuccessPage}
     <OrderSuccess order={page.orderSuccess} />
+{:else if page.adminOrderPage}
+    <AdminOrderDetail order={page.adminOrder} csrfToken={page.adminOrderCsrfToken} />
 {:else if page.admin}
     <AdminCatalog admin={page.admin} />
 {:else}

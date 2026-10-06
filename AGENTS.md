@@ -8,7 +8,7 @@ The authoritative implementation direction is in [plan-final.md](plan-final.md).
 
 ## Current repository state
 
-The repository now contains the approved planning documents, the initial Nemesis foundation, the Phase 2 catalog/admin path, and an in-progress Phase 3 cart/guest-checkout path inside `backend/`. Catalog browsing, initial protected catalog actions, checkout location validation, configurable delivery rules, transactional order creation, the order-success page, and the protected new-order queue are implemented and locally verified. Complete admin catalog editing/images, full order operations, phone confirmation, and Pathao business functionality are not complete; do not imply that those features exist until they are built and verified.
+The repository now contains the approved planning documents, the initial Nemesis foundation, the Phase 2 catalog/admin path, the Phase 3 cart/guest-checkout path, and an in-progress Phase 4 order-operations path inside `backend/`. Catalog browsing, protected catalog actions, guest order creation, configurable delivery rules, status transitions, audit history, fraud review, customer order history, and stock release on cancellation/rejection are implemented and locally verified. Complete admin catalog editing/images, browser admin authentication/session flow, phone confirmation as an external business process, and Pathao business functionality are not complete; do not imply that those features exist until they are built and verified.
 
 ## Technology direction
 

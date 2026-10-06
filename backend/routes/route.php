@@ -9,6 +9,7 @@ use App\Controllers\ApplicationsController;
 use App\Controllers\TestController;
 use App\Controllers\CatalogAdminController;
 use App\Controllers\CheckoutController;
+use App\Controllers\OrderAdminController;
 
 // Instantiate the router
 $router = isset($container) ? $container->make(\Nemesis\Router\Router::class) : new Router();
@@ -33,6 +34,7 @@ $applicationsController = new ApplicationsController();
 $frontendController = new FrontendController();
 $catalogAdminController = new CatalogAdminController();
 $checkoutController = new CheckoutController();
+$orderAdminController = new OrderAdminController();
 
 $router->frontendGroup('react', 'layouts.app', function (Router $router) use ($frontendController): void {
     $router->add('GET', '/login', [$frontendController, 'login'], ['web'])->name('login.page');
@@ -50,6 +52,7 @@ $router->frontendGroup('svelte', 'layouts.app', function (Router $router) use ($
     $router->add('GET', '/checkout', [$frontendController, 'checkout'], ['web'])->name('checkout.page');
     $router->add('GET', '/checkout/success/{reference}', [$frontendController, 'orderSuccess'], ['web'])->name('checkout.success');
     $router->add('GET', '/admin', [$frontendController, 'admin'], ['auth:admin'])->name('admin.dashboard');
+    $router->add('GET', '/admin/orders/{reference}', [$frontendController, 'adminOrder'], ['auth:admin'])->name('admin.orders.show');
 }, ['middleware' => 'web']);
 
 $router->add('POST', '/checkout/orders', [$checkoutController, 'store'], ['web'])->name('checkout.orders.store');
@@ -63,6 +66,9 @@ $router->group(['middleware' => ['auth:admin', 'web']], function (Router $router
     $router->add('POST', '/admin/catalog/products', [$catalogAdminController, 'storeProduct'])->name('admin.catalog.products.store');
     $router->add('PUT', '/admin/catalog/products/{id}', [$catalogAdminController, 'updateProduct'])->name('admin.catalog.products.update');
     $router->add('POST', '/admin/catalog/products/{id}/active', [$catalogAdminController, 'toggleProduct'])->name('admin.catalog.products.active');
+    $router->add('POST', '/admin/orders/{reference}/transition', [$orderAdminController, 'transition'])->name('admin.orders.transition');
+    $router->add('POST', '/admin/orders/{reference}/notes', [$orderAdminController, 'note'])->name('admin.orders.notes');
+    $router->add('POST', '/admin/fraud-flags/{id}/review', [$orderAdminController, 'reviewFlag'])->name('admin.fraud-flags.review');
 });
 
 $router->frontendGroup('ghost', 'layouts.app', function (Router $router) use ($frontendController): void {

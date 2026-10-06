@@ -113,3 +113,7 @@ The first catalog slice is now implemented inside `backend/`; see [phase-2-catal
 ## Phase 3 started locally
 
 The first cart and guest-checkout slice is now implemented inside `backend/`; see [phase-3-checkout.md](phase-3-checkout.md) for the scoped details and evidence. Phase 3 is in progress, not complete.
+
+## Phase 4 started locally
+
+The first order-operations slice is now implemented inside `backend/`; see [phase-4-order-operations.md](phase-4-order-operations.md) for the scoped details and evidence. Phase 4 is in progress, not complete.

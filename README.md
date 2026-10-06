@@ -20,7 +20,7 @@ The guiding principle is **Luxury look, simple shopping.**
 
 ## Status
 
-The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, the Phase 2 catalog/admin slice, and the in-progress Phase 3 cart/guest-checkout slice. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
+The repository now contains the approved project plan, Phase 0 discovery report, the Nemesis-integrated Svelte foundation, the Phase 2 catalog/admin slice, the Phase 3 cart/guest-checkout slice, and the in-progress Phase 4 order-operations slice. Feature implementation will proceed phase by phase according to [plan-final.md](plan-final.md).
 
 ## Documentation
 
@@ -29,6 +29,7 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 - [Phase 0 discovery report](phase-0-discovery.md)
 - [Phase 2 catalog progress](phase-2-catalog.md)
 - [Phase 3 checkout progress](phase-3-checkout.md)
+- [Phase 4 order operations progress](phase-4-order-operations.md)
 - [Framework fixes](Framework_Fixes.md)
 - [Agent and contributor guidance](AGENTS.md)
 - [LLM project context](llms.txt)
@@ -39,6 +40,7 @@ The repository now contains the approved project plan, Phase 0 discovery report,
 - `backend/database/data/bangladesh_locations.json` — supplied Bangladesh district/subdistrict/post-office dataset.
 - `backend/database/migrations/2026_10_06_000000_create_catalog_tables.php` — Phase 2 catalog schema.
 - `backend/database/migrations/2026_10_06_010000_create_checkout_tables.php` — Phase 3 locations, delivery, orders, history, and fraud schema.
+- `backend/database/migrations/2026_10_06_020000_create_order_operations.php` — Phase 4 status, review, and stock-release fields.
 - `backend/database/seeders/CatalogSeeder.php` — repeatable local demo catalog seed.
 
 ## Planned stack
@@ -65,7 +67,7 @@ Svelte props will be used for parent-to-child component data flow. Nemesis contr
 
 ## Development
 
-The initial Nemesis and integrated Svelte foundations are now created, and Phase 3 checkout work is in progress. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
+The initial Nemesis and integrated Svelte foundations are now created, and Phase 4 order-operations work is in progress. Before adding features, read `AGENTS.md` and the relevant phase in `plan-final.md`.
 
 Backend setup:
 

@@ -1,6 +1,9 @@
 <script>
     export let admin = { categories: [], products: [], orders: [], csrfToken: '' };
 
+    $: orderDashboard = admin.orderDashboard ?? { counts: {}, total: 0, pendingFraudFlags: 0, orders: [] };
+    $: orderFilters = admin.orderFilters ?? { search: '', status: '' };
+
     let message = '';
     let error = '';
     let product = {
@@ -98,31 +101,21 @@
         {#if message}<div class="mt-6 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</div>{/if}
         {#if error}<div class="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div>{/if}
 
-        <section class="mt-8 overflow-hidden rounded-2xl border border-amber-200/20 bg-amber-200/[0.04]">
-            <div class="flex flex-col justify-between gap-2 border-b border-white/10 px-5 py-4 sm:flex-row sm:items-center">
-                <div><h2 class="font-medium text-white">New order queue</h2><p class="mt-1 text-xs text-stone-500">Review customer details and call before confirmation or shipment.</p></div>
-                <span class="text-sm text-amber-200">{admin.orders?.length ?? 0} waiting</span>
+        <section class="mt-8 rounded-2xl border border-amber-200/20 bg-amber-200/[0.04] p-5">
+            <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 class="font-medium text-white">Order operations</h2><p class="mt-1 text-xs text-stone-500">Review customer details, phone-confirm orders, and keep shipment state separate.</p></div><span class="text-sm text-amber-200">{orderDashboard.pendingFraudFlags} pending fraud flags</span></div>
+            <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+                {#each Object.entries(orderDashboard.counts ?? {}) as [status, count]}
+                    <div class="rounded-xl border border-white/10 bg-black/20 p-3"><p class="text-[10px] uppercase tracking-wider text-stone-500">{status.replaceAll('_', ' ')}</p><p class="mt-2 text-xl font-semibold text-amber-200">{count}</p></div>
+                {/each}
             </div>
-            {#if admin.orders?.length}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-left text-sm">
-                        <thead class="bg-white/[0.03] text-xs uppercase tracking-[0.15em] text-stone-500"><tr><th class="px-5 py-3">Order</th><th class="px-5 py-3">Customer</th><th class="px-5 py-3">Delivery</th><th class="px-5 py-3">Total</th><th class="px-5 py-3">Review</th></tr></thead>
-                        <tbody class="divide-y divide-white/10">
-                            {#each admin.orders as order}
-                                <tr>
-                                    <td class="px-5 py-4"><div class="font-medium text-amber-200">{order.reference}</div><div class="mt-1 text-xs text-stone-500">{order.item_count} {order.item_count === 1 ? 'item' : 'items'} · {order.created_at}</div></td>
-                                    <td class="px-5 py-4"><div class="font-medium text-white">{order.customer_name}</div><div class="mt-1 text-xs text-stone-400">{order.customer_phone}</div></td>
-                                    <td class="px-5 py-4 text-stone-300">{order.subdistrict}, {order.district}</td>
-                                    <td class="px-5 py-4 text-amber-200">{formatPrice(order.total)}</td>
-                                    <td class="px-5 py-4">{#if order.is_suspicious}<span class="rounded-full bg-rose-300/15 px-2 py-1 text-xs text-rose-200">Flagged · {order.risk_score}</span>{:else}<span class="text-xs text-emerald-300">No flags</span>{/if}</td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            {:else}
-                <p class="px-5 py-7 text-sm text-stone-500">No new guest orders are waiting for review.</p>
-            {/if}
+            <form class="mt-5 flex flex-col gap-3 sm:flex-row" method="GET" action="/admin">
+                <label class="sr-only" for="admin-order-search">Search orders</label><input id="admin-order-search" name="search" value={orderFilters.search} placeholder="Search reference, name, phone, district" class="flex-1 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white outline-none focus:border-amber-200" />
+                <label class="sr-only" for="admin-order-status">Filter order status</label><select id="admin-order-status" name="status" class="rounded-full border border-white/15 bg-[#151515] px-4 py-2 text-sm text-white outline-none focus:border-amber-200"><option value="">All statuses</option>{#each Object.keys(orderDashboard.counts ?? {}) as status}<option value={status} selected={orderFilters.status === status}>{status.replaceAll('_', ' ')}</option>{/each}</select>
+                <button class="rounded-full bg-amber-300 px-5 py-2 text-sm font-semibold text-black hover:bg-amber-200" type="submit">Filter</button>
+            </form>
+            {#if orderDashboard.orders?.length}
+                <div class="mt-5 overflow-x-auto rounded-xl border border-white/10"><table class="min-w-full text-left text-sm"><thead class="bg-white/[0.03] text-xs uppercase tracking-[0.15em] text-stone-500"><tr><th class="px-4 py-3">Order</th><th class="px-4 py-3">Customer</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Total</th><th class="px-4 py-3">Review</th></tr></thead><tbody class="divide-y divide-white/10">{#each orderDashboard.orders as order}<tr><td class="px-4 py-4"><a class="font-medium text-amber-200 hover:text-amber-100" href={`/admin/orders/${order.reference}`}>{order.reference}</a><div class="mt-1 text-xs text-stone-500">{order.itemCount} {order.itemCount === 1 ? 'item' : 'items'} · {order.createdAt}</div></td><td class="px-4 py-4"><div class="font-medium text-white">{order.customerName}</div><div class="mt-1 text-xs text-stone-400">{order.customerPhone}</div><div class="mt-1 text-xs text-stone-500">{order.subdistrict}, {order.district}</div></td><td class="px-4 py-4"><span class="rounded-full bg-white/10 px-2 py-1 text-xs text-stone-300">{order.status.replaceAll('_', ' ')}</span><div class="mt-2 text-xs text-stone-500">Shipment: {order.shipmentStatus.replaceAll('_', ' ')}</div></td><td class="px-4 py-4 text-amber-200">{formatPrice(order.total)}</td><td class="px-4 py-4">{#if order.pendingFlagCount > 0}<span class="rounded-full bg-rose-300/15 px-2 py-1 text-xs text-rose-200">{order.pendingFlagCount} flag(s)</span>{:else}<span class="text-xs text-emerald-300">Clear</span>{/if}</td></tr>{/each}</tbody></table></div>
+            {:else}<p class="mt-5 text-sm text-stone-500">No orders match the current filter.</p>{/if}
         </section>
 
         <section class="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
